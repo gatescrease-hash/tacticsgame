@@ -196,7 +196,7 @@ export function runBattle(content: Content, scenarioId: string, seed: number, op
       break;
     }
 
-    const actor = nextActor(s.units);
+    const actor = nextActor(s.units, s.rules.ties);
     if (!actor) {
       advance(s, ticksToNextEvent(s));
       updateStatuses(s);
@@ -226,7 +226,7 @@ function updateIntent(s: BattleState, u: Unit): void {
 }
 
 function takeTurn(s: BattleState, u: Unit): void {
-  emit(s, s.opts.recordQueue ? { t: s.t, kind: "turn", uid: u.uid, queue: projectTurnOrder(s.units, 8) } : { t: s.t, kind: "turn", uid: u.uid });
+  emit(s, s.opts.recordQueue ? { t: s.t, kind: "turn", uid: u.uid, queue: projectTurnOrder(s.units, 8, s.rules.ties) } : { t: s.t, kind: "turn", uid: u.uid });
   firePassives(s, u, "onTurnStart");
   if (!u.alive) return;
   updateIntent(s, u);
@@ -316,5 +316,5 @@ function anyTargetInRange(s: BattleState, u: Unit): boolean {
 /** Opening turn order for the setup screen preview, given placements. */
 export function previewTurnOrder(content: Content, scenarioId: string, n: number, opts: BattleOptions = {}): { units: UnitSnapshot[]; order: number[] } {
   const s = setupBattle(content, scenarioId, 0, opts);
-  return { units: s.units.map(snapshot), order: projectTurnOrder(s.units, n) };
+  return { units: s.units.map(snapshot), order: projectTurnOrder(s.units, n, s.rules.ties) };
 }

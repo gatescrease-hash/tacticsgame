@@ -34,6 +34,8 @@ export interface Rules {
   hitDice: number;
   /** With luck "meter": false starts every meter at 50, so the seed changes nothing. */
   seededLuck: boolean;
+  /** Which side acts first when two units are exactly tied on initiative. */
+  ties: Side;
   /** The player's squad picks one shared target and concentrates on it. */
   focusFire: boolean;
   /** AI commitment: units prefer their current target (x1.5) and switch only for a clearly better one. */
@@ -61,7 +63,7 @@ export interface Rules {
 }
 
 export const BASELINE_RULES: Rules = {
-  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, seededLuck: true, focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: false, playerHold: 0,
+  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: false, playerHold: 0,
 };
 
 /**
@@ -70,7 +72,7 @@ export const BASELINE_RULES: Rules = {
  * points and made every difficulty curve monotonic (see README "Sensitivity").
  */
 export const DEFAULT_RULES: Rules = {
-  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, luck: "meter", hitDice: 1, seededLuck: true, focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: true, playerHold: 0,
+  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, luck: "meter", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: true, playerHold: 0,
 };
 
 export interface BattleOptions {

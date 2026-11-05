@@ -1,7 +1,7 @@
 import type { BattleState } from "./state.js";
 import { isFrozen, nextStatusTime } from "./statuses.js";
 import { stat } from "./stats.js";
-import type { Unit } from "./types.js";
+import type { Side, Unit } from "./types.js";
 
 /**
  * Individual initiative timeline (FFT-style). Every tick, each unit's gauge
@@ -40,23 +40,23 @@ export function advance(s: BattleState, ticks: number): void {
 
 /**
  * The ready unit that acts next. Ties: higher gauge, then fill rate, then
- * player side, then uid. No randomness, so the same setup replays the same way.
+ * the `first` side (rules.ties), then uid. No randomness, so the same setup replays the same way.
  */
-export function nextActor(units: Unit[]): Unit | null {
+export function nextActor(units: Unit[], first: Side = "player"): Unit | null {
   let best: Unit | null = null;
   for (const u of units) {
     if (!u.alive || u.gauge < THRESHOLD || isFrozen(u)) continue;
-    if (!best || compare(u, best) < 0) best = u;
+    if (!best || compare(u, best, first) < 0) best = u;
   }
   return best;
 }
 
-function compare(a: Unit, b: Unit): number {
+function compare(a: Unit, b: Unit, first: Side): number {
   if (a.gauge !== b.gauge) return b.gauge - a.gauge;
   const ra = fillRate(a);
   const rb = fillRate(b);
   if (ra !== rb) return rb - ra;
-  if (a.side !== b.side) return a.side === "player" ? -1 : 1;
+  if (a.side !== b.side) return a.side === first ? -1 : 1;
   return a.uid - b.uid;
 }
 
@@ -64,7 +64,7 @@ function compare(a: Unit, b: Unit): number {
  * Projected order of the next `n` turns, assuming each action costs a flat
  * THRESHOLD. Used for the turn-order bar and the setup-screen preview.
  */
-export function projectTurnOrder(units: Unit[], n: number): number[] {
+export function projectTurnOrder(units: Unit[], n: number, first: Side = "player"): number[] {
   const sim = units
     .filter((u) => u.alive)
     .map((u) => ({ uid: u.uid, gauge: u.gauge, rate: fillRate(u), side: u.side }))
@@ -81,7 +81,7 @@ export function projectTurnOrder(units: Unit[], n: number): number[] {
       if (
         !best ||
         x.gauge > best.gauge ||
-        (x.gauge === best.gauge && (x.rate > best.rate || (x.rate === best.rate && (x.side === "player" && best.side !== "player" || (x.side === best.side && x.uid < best.uid)))))
+        (x.gauge === best.gauge && (x.rate > best.rate || (x.rate === best.rate && (x.side === first && best.side !== first || (x.side === best.side && x.uid < best.uid)))))
       ) {
         best = x;
       }

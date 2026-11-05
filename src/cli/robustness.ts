@@ -16,7 +16,7 @@
  * +30% power: parity should go to the player, a clearly stronger enemy shouldn't.
  */
 import { content } from "../content/index.js";
-import { DEFAULT_RULES, DIFFICULTIES, Rng, runBattle, settleBattle, type Content, type Pos, type Rules, type ScenarioDef } from "../sim/index.js";
+import { DEFAULT_RULES, DIFFICULTIES, Rng, runBattle, settleBattle, setupBattle, type Content, type Pos, type Rules, type ScenarioDef } from "../sim/index.js";
 
 const F = { formation: true };
 export const PRESETS: Record<string, Partial<Rules>> = {
@@ -142,6 +142,57 @@ function crossing(levels: number[], curve: number[], target: number): number {
   return levels.at(-1)!;
 }
 
+/** Parity compositions: identical squads on both sides. */
+const PARITY_TEAMS: Record<string, string[]> = {
+  "2 melee": ["aldric", "vex"],
+  "2 ranged": ["wren", "sela"],
+  "3 mixed": ["aldric", "wren", "oswin"],
+  "3 skirm": ["gorm", "kesh", "mira"],
+  "4 mixed": ["aldric", "vex", "sela", "oswin"],
+  "5 mixed": ["aldric", "kesh", "wren", "sela", "oswin"],
+};
+
+/**
+ * A truly symmetric mirror for one placement: the player's squad forms up as usual,
+ * and the enemy stands on the reflected tiles. Only initiative tie-breaks differ.
+ */
+function symmetricMirror(team: string[], k: number, rules: Partial<Rules>): { world: Content; id: string; rules: Partial<Rules> } {
+  const base = mirror("sym", team);
+  const w0: Content = { ...content, scenarios: { ...content.scenarios, sym: base } };
+  const formed = setupBattle(w0, "sym", 1, { rules, placements: randomPlacement(base, k) }).units.filter((u) => u.side === "player");
+  const width = MIRROR_MAP[0]!.length;
+  const sym: ScenarioDef = {
+    ...base,
+    units: [
+      ...formed.map((u) => ({ unitId: u.defId, side: "player" as const, pos: { ...u.pos } })),
+      ...formed.map((u) => ({ unitId: u.defId, side: "enemy" as const, pos: { x: width - 1 - u.pos.x, y: u.pos.y } })),
+    ],
+  };
+  return { world: { ...content, scenarios: { ...content.scenarios, sym } }, id: "sym", rules: { ...rules, formation: false } };
+}
+
+if (args.includes("--parity")) {
+  // Symmetric mirrors at several enemy strengths: where should a settle threshold sit?
+  const LV = [0, 10, 20, 30];
+  console.log(`parity (symmetric mirrors), ${P} placements x ${S} seeds: player win % mean [min-max over placements]`);
+  console.log(`${"".padEnd(10)}${LV.map((l) => `enemy +${l}%`.padEnd(16)).join("")}`);
+  for (const [name, team] of Object.entries(PARITY_TEAMS)) {
+    const cells = LV.map((enemyPower) => {
+      const ps: number[] = [];
+      for (let k = 0; k < P; k++) {
+        const m = symmetricMirror(team, k, {});
+        let w = 0;
+        for (let seed = 1; seed <= S; seed++) if (runBattle(m.world, m.id, seed, { rules: m.rules, enemyPower }).winner === "player") w++;
+        ps.push((100 * w) / S);
+      }
+      const mean = ps.reduce((a, b) => a + b, 0) / ps.length;
+      return `${mean.toFixed(0).padStart(3)} [${Math.min(...ps).toFixed(0)}-${Math.max(...ps).toFixed(0)}]`.padEnd(16);
+    });
+    console.log(`${name.padEnd(10)}${cells.join("")}`);
+  }
+  process.exit(0);
+}
+
 if (args.includes("--settle")) {
   // Settled outcomes: the result depends only on the setup. Report the share of random
   // placements that win on each difficulty, for real scenarios and mirrors at several strengths.
@@ -156,8 +207,19 @@ if (args.includes("--settle")) {
   };
   console.log(`settled outcomes over ${P} random placements: % of placements won on ${diffs.join(" / ")}`);
   for (const id of real) console.log(`  ${id.padEnd(16)}${row(id, 0)}`);
-  for (const id of Object.keys(MIRRORS)) {
-    for (const lvl of [-15, 0, 15, 30]) console.log(`  ${`${id} enemy ${lvl >= 0 ? "+" : ""}${lvl}%`.padEnd(16)}${row(id, lvl)}`);
+  // Symmetric mirrors: the enemy stands on the reflection of the player's formed squad.
+  const symRow = (team: string[], enemyPower: number) => {
+    const probs: number[] = [];
+    for (let k = 0; k < P; k++) {
+      const m = symmetricMirror(team, k, {});
+      probs.push(settleBattle(m.world, m.id, 1, { rules: m.rules, enemyPower }).winProb);
+    }
+    const won = diffs.map((d) => (100 * probs.filter((p) => p >= DIFFICULTIES[d].threshold).length) / P);
+    probs.sort((a, b) => a - b);
+    return `${won.map(f).join("")}      p range ${probs[0]}-${probs.at(-1)}  median ${probs[Math.floor(P / 2)]}`;
+  };
+  for (const [name, team] of Object.entries(PARITY_TEAMS)) {
+    for (const lvl of [0, 15, 30]) console.log(`  ${`${name} +${lvl}%`.padEnd(16)}${symRow(team, lvl)}`);
   }
   process.exit(0);
 }

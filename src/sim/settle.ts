@@ -76,6 +76,25 @@ export function winMargin(r: BattleResult): number {
   return max > 0 ? Math.round((100 * hp) / max) : 0;
 }
 
+export interface Sample {
+  seed: number;
+  winner: Side | "draw";
+  margin: number;
+}
+
+/** Simulate a setup across the fixed sample seeds. */
+export function sampleSetup(content: Content, scenarioId: string, opts: BattleOptions = {}, n = 24): Sample[] {
+  // Samples don't need the playback extras.
+  const sampleOpts: BattleOptions = { ...opts, recordQueue: false, debug: false };
+  const samples: Sample[] = [];
+  for (let i = 0; i < n; i++) {
+    const seed = SAMPLE_BASE + i;
+    const r = runBattle(content, scenarioId, seed, sampleOpts);
+    samples.push({ seed, winner: r.winner, margin: winMargin(r) });
+  }
+  return samples;
+}
+
 export function settleBattle(
   content: Content,
   scenarioId: string,
@@ -85,14 +104,7 @@ export function settleBattle(
 ): SettleResult {
   const diff = DIFFICULTIES[settle.difficulty ?? "normal"];
   const n = Math.max(1, settle.samples ?? 24);
-  // Samples don't need the playback extras.
-  const sampleOpts: BattleOptions = { ...opts, recordQueue: false, debug: false };
-  const samples: { seed: number; winner: Side | "draw"; margin: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    const s = SAMPLE_BASE + i;
-    const r = runBattle(content, scenarioId, s, sampleOpts);
-    samples.push({ seed: s, winner: r.winner, margin: winMargin(r) });
-  }
+  const samples = sampleSetup(content, scenarioId, opts, n);
   const wins = samples.filter((x) => x.winner === "player").length;
   const winProb = Math.round((100 * wins) / n);
   const settled: Side = winProb >= diff.threshold ? "player" : "enemy";

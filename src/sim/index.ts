@@ -14,4 +14,4 @@ export { validateContent } from "./validate.js";
 export { stat, maxHp } from "./stats.js";
 export { computePacket, tierFor, pillarOf } from "./damage.js";
 export { stageChances, landChance, critChance, basicAttack } from "./combat.js";
-export { settleBattle, winMargin, DIFFICULTIES, type Difficulty, type SettleResult, type SettleOptions } from "./settle.js";
+export { settleBattle, sampleSetup, winMargin, DIFFICULTIES, type Difficulty, type SettleResult, type SettleOptions, type Sample } from "./settle.js";
