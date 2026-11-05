@@ -12,7 +12,8 @@ anticipating every future need. It is fine to leave TODOs.
 - `npm test` and `npm run typecheck`: run both before committing.
 - `npm run battle -- <scenario> <seed> [--debug]`: print one battle's text log (+ AI scores).
 - `npm run batch -- <scenario|all> <runs>`: headless balance stats over seeds 1..runs.
-- `npm run dev`: Vite dev server for the browser front end.
+- `npm run dev`: Vite dev server for the browser front end (single battles and runs).
+- `npm run autorun -- --runs 16 --policy sensible|careless`: play whole roguelike runs headlessly.
 
 ## Architecture rules (from the design notes)
 
@@ -28,6 +29,7 @@ anticipating every future need. It is fine to leave TODOs.
 - Content is data in `src/content`. New abilities should be built from existing effect pieces,
   shapes and triggers; add a new piece only when no combination works. Keep `validateContent`
   in step with new reference fields.
+- `src/run` (the run loop) is pure TS like `src/sim` and is included in `tsconfig.sim.json`.
 - Players never write rules; personality = utility-AI weights (see `traits.ts`).
 - After AI or content changes, rerun `npm run batch -- all 100` and watch for draws (stalemates)
   and win-rate swings; tune scenario `enemyMods` (prefer the smooth `power` term) if needed.

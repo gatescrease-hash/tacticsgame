@@ -31,6 +31,12 @@ npm run typecheck                        # also checks the sim has no DOM/Node d
 4. The result depends only on your setup (roster, bench, where the squad forms up). Changing the
    seed shows a different battle with the same result.
 
+**Runs:** press **Start run** for the roguelike loop (difficulty and seed come from the header). You
+start with a company of five. Each battle you tick who deploys (the map limits how many) and choose
+where they form up; enemy strength rises 4% per battle. Afterwards deployed units gain XP (knocked-out
+units half, and they're fatigued next fight), and you pick a reward: a recruit, training, a trinket,
+or rest (+1 heart). Losses cost 1-3 hearts by how badly they went; at 0 the run is over.
+
 Scenarios: `duel`, `skirmish`, `patrol` (Arago militia, textbook formation), `foundry` (golem and
 automatons: fire and minds don't work), `marsh` (lizardfolk ambush plus mudlings that water
 dissolves), `wolves` (a pack that goes for stragglers).
@@ -226,8 +232,33 @@ Findings:
   predictably once strength passes the player's level ("the wall"), with a narrow spread of run
   lengths. Real compounding needs the progression systems, so mistakes carry between battles.
 
+## Run loop
+
+`src/run/run.ts` (pure TS, deterministic from the run seed; the browser and the auto-player share it).
+
+- Roster: start with 5 (Aldric, Wren, Oswin, Kesh, Sela), up to 8. Recruits come from rewards.
+- Encounters: the five scenarios in a shuffled order per cycle; the roster replaces the scenario's
+  preset units and forms up at the chosen spot. Enemy strength +4% per battle (`ramp`).
+- Progression: 100 XP per battle (50 if knocked out); the next level costs 100 + 50 per level gained,
+  so growth is front-loaded and the ramp catches up. A level gives +2 HP and +1 to the class's main
+  stat every other level. Training gives +2 to a stat (+4 HP); trinkets go up to 2 per unit.
+- Hearts: 5 (max 5). A loss costs 1 / 2 / 3 hearts when the enemy finished with under 35% /
+  under 70% / more of its HP. 3 reward offers after a win, 2 after a loss.
+
+`npm run autorun -- --runs 16 --ramp 4 --policy sensible|careless` plays whole runs headlessly
+(sensible: deploys its highest levels, rests when low, recruits to 6, then trains; careless: random
+deployment and rewards). Measured on normal, 16 runs each (noisy):
+
+| ramp | sensible: battles per run [10th-90th], battles won | careless |
+|---|---|---|
+| 3% | 10 [6-22], 77% | 9 [6-13], 66% |
+| 4% | 14 [6-21], 77% | 8 [4-10], 60% |
+| 5% | 10 [6-15], 72% | 8 [4-11], 58% |
+
 ## Known issues and next steps
 
+- **Run loop balance is first-pass.** The auto-player numbers come from 16 runs per cell. Skirmish
+  (2 slots) is the most common run-ender. Retrying a lost battle (design notes) isn't built yet.
 - **Scenarios represent early-run fights.** At +0% enemy strength they settle as wins on normal for
   typical play (skirmish is the exception at a 54% raw rate). Difficulty is meant to come from a
   run's ramp; there is no run loop yet, only the model above.
