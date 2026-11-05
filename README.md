@@ -181,20 +181,56 @@ Findings so far:
 Every battle shown is a real, unaltered simulation; only the choice of which one is steered.
 `npm run battle -- <scenario> <seed> --settle normal` and `npm run robustness -- --settle` exercise it.
 
-Measured (`robustness --settle`, 12 random placements each): even mirror fights win on every placement
-on easy; a +30% stronger enemy loses on every placement for 2v2 and 3v3. On normal, an even 2v2
-wins on all placements, but even 3v3 and 5v5 only on 33-50%, because raw parity win rates differ by
-composition (median 33% for 3v3, 42% for 5v5). The default scenarios (raw 67-84%) win on easy
-and normal with any placement.
+Parity, measured on truly symmetric mirrors (`npm run robustness -- --parity`: the enemy stands on
+the reflection of the player's formed squad), player win % mean over placements:
+
+| Squad | even | enemy +10% | +20% | +30% |
+|---|---|---|---|---|
+| 2 melee | 54 | 29 | 21 | 21 |
+| 2 ranged | 86 | 73 | 41 | 17 |
+| 3 mixed | 69 | 22 | 13 | 1 |
+| 3 skirmishers | 53 | 33 | 8 | 7 |
+| 4 mixed | 52 | 53 | 34 | 4 |
+| 5 mixed | 49 | 36 | 33 | 25 |
+
+Even fights already lean to the player (the enemy doctrine is a little more aggressive, so the enemy
+walks in). Normal's 35% threshold sits between "even" and "clearly stronger" for every
+composition. (An earlier version of this table showed even fights at 33-42%; that came from a
+lopsided fixture where only the player's squad formed up.)
+
+## Run model
+
+`npm run runs -- table <scenario>` precomputes settled results per enemy strength level and play
+style; `npm run runs -- model --ramp R` then simulates whole runs instantly: scenarios in shuffled
+order, enemy strength rising R% per battle (net of player growth, which doesn't exist yet),
+5 hearts, a loss costing 1-3 hearts by how badly it went.
+
+Median battles survived [10th-90th percentile], battle win %:
+
+| ramp | normal, typical play | normal, thoughtful play | easy, typical play |
+|---|---|---|---|
+| 1%/battle | 12 [9-15], 77% | 20 [17-23], 85% | |
+| 2%/battle | 9 [6-11], 66% | 13 [11-15], 76% | 13 [10-15], 83% |
+| 3%/battle | 7 [6-9], 60% | 11 [9-11], 70% | 10 [7-12], 78% |
+
+(typical = full roster dropped at a random spot; thoughtful = best of six such setups per fight.)
+
+Findings:
+
+- Winning is the norm and thoughtful play goes much further, as intended: at a net ramp of ~1% per
+  battle, normal runs last ~12 battles for typical play and ~20 for thoughtful play.
+- **Missing a unit is never a small mistake.** Benching one or two units drops the win rate from
+  ~75% to ~2%: fights follow Lanchester's square law, so numbers dominate. "Small mistakes" will
+  have to come from roster and training choices worth a few % of strength each, not from bodies.
+- Each +5% of net enemy strength costs ~10-15 points of win rate, so a run ends fairly
+  predictably once strength passes the player's level ("the wall"), with a narrow spread of run
+  lengths. Real compounding needs the progression systems, so mistakes carry between battles.
 
 ## Known issues and next steps
 
-- **Settle thresholds are global, but parity isn't.** The raw win rate of an even fight differs by
-  composition, so one threshold can't give every even fight to the player on normal without also
-  handing some +15% fights over. Options: shrink the composition bias (the player stepping into
-  range first), or calibrate per fight (for example, compare against the same squad mirrored).
-- **Scenarios are now easy on normal.** They were tuned to raw 67-84% wins; with settled outcomes
-  they should be tuned so a careless roster sits below the threshold and a good one above it.
+- **Scenarios represent early-run fights.** At +0% enemy strength they settle as wins on normal for
+  typical play (skirmish is the exception at a 54% raw rate). Difficulty is meant to come from a
+  run's ramp; there is no run loop yet, only the model above.
 - Settling costs 24 battles per Fight (about 0.9 s for patrol in the browser).
 
 - **Tempo is still knife-edge in small fights.** Skirmish (2v2) still swings 44 points on a

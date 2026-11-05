@@ -5,7 +5,7 @@
  * precomputed once into a table, then runs are simulated instantly from it:
  *
  *   npm run runs -- table <scenario> [setups]   # sample battles -> runs-cache/<scenario>.json
- *   npm run runs -- model [--runs 2000] [--ramp 3] [--hearts 5]
+ *   npm run runs -- model [--runs 2000] [--ramp 1] [--hearts 5]
  *
  * Table: for each enemy strength level (+0%..+50%) and play style, K setups,
  * each sampled across the settle seeds (win/loss margins kept).
@@ -98,7 +98,7 @@ function heartsLost(enemyMargin: number): number {
 function model(): void {
   const tables = readdirSync(CACHE).map((f) => JSON.parse(readFileSync(`${CACHE}/${f}`, "utf8")) as Table);
   const runs = Number(flag("runs", "2000"));
-  const ramp = Number(flag("ramp", "3"));
+  const ramp = Number(flag("ramp", "1"));
   const hearts = Number(flag("hearts", "5"));
   const maxBattles = 60;
   console.log(`run model: ${tables.length} scenarios, ramp +${ramp}% enemy strength per battle, ${hearts} hearts, ${runs} runs per cell`);
