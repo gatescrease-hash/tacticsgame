@@ -76,7 +76,10 @@ Key mechanics, briefly:
   possible targets. Traits shift weights (cowards weigh danger, smart units weigh kills and AoE).
   Impatience and battle pressure erode caution so standoffs end. Doctrines (advance, hold/ambush,
   hunt a class tag, pack) set enemy intent and target priorities.
-- **Difficulty:** each scenario has an `enemyMods` modifier layer, tuned with the batch runner.
+- **Difficulty:** each scenario has an `enemyMods` modifier layer (`difficulty()` in
+  `scenarios.ts`); fine-tune with its smooth `power` term rather than flat stats.
+- **Combat rules** (`Rules` in `src/sim/state.ts`, overridable per battle) exist to tame tempo and
+  difficulty sensitivity; see below.
 
 ## Status
 
@@ -90,17 +93,54 @@ All seven steps of the design notes' build order exist in a first-pass form:
 6. [x] Headless batch runner (win rates, length, damage share, ability use, tempo sensitivity)
 7. [x] Visual playback (placement, bench, scouting, turn-order preview, bubbles, worker baking)
 
-Batch snapshot (100 seeds, default setups): duel 8% player wins, skirmish 67%, patrol 75%,
-foundry 57%, marsh 87%, wolves 83%; no draws.
+Batch snapshot (100 seeds, default setups): duel 7% player wins, skirmish 62%, patrol 60%,
+foundry 65%, marsh 66%, wolves 50%; no draws.
+
+## Sensitivity
+
+`npm run sensitivity -- --detail` measures, per rules preset and scenario:
+
+- **tempo:** player win % with a +30 opening-gauge head start minus win % at -30.
+- **curve:** win % as enemy HP and damage step from -20% to +40%; **jump** is the biggest change
+  between neighbouring steps, **mono** counts steps where a stronger enemy did *better*.
+- **flip / ratio:** how often the winner changes when opening gauges are jittered, compared to
+  2p(1-p), the rate for two unrelated battles. Ratio ~1 means a nudge is as good as a re-roll.
+
+Findings that shaped the rules:
+
+- The old "tempo sensitivity" number was mostly an artifact: one shared random stream meant any
+  timing change reshuffled every later roll. That's why flips matched 2p(1-p) almost exactly.
+- The real tempo effect pointed the *wrong way*: a head start made the player *lose*, by up to 78
+  points in skirmish, because the side that steps into range first gets hit first.
+- Rules added (all on by default; each one's contribution was checked by removing it):
+
+| Rule | What it does | Mainly helps |
+|---|---|---|
+| `unitStreams` | each unit rolls from its own stream, fixed rolls per attack | readability, flip ratio |
+| `hpScale: 150` | +50% HP for everyone; longer fights average out swings | tempo |
+| `damageSpread: 20` | ±20% damage per hit blurs hits-to-kill breakpoints | cliffs |
+| `charge` | stepping into range lets a unit strike that same turn (gauge debt) | tempo, cliffs |
+| `underdog: 10` | a side down on knockouts takes 10% less damage per unit behind (max 3) | cliffs, snowballing |
+
+Result on the five tuned scenarios (80 seeds per point):
+
+| Rules | tempo (mean abs) | worst jump | wrong-way steps | flip ratio | battles/s |
+|---|---|---|---|---|---|
+| old (`BASELINE_RULES`) | 29 | 42 | 7 | 0.89 | 78 |
+| new (`DEFAULT_RULES`) | 18 | 27 | 0 | 0.83 | 56 |
+
+Difficulty curves are now monotonic and smoother, and the head-start effect is roughly 40% smaller.
+Battles run about 50% longer and throughput drops accordingly.
 
 ## Known issues and next steps
 
-- **Tempo sensitivity is high.** Jittering opening gauges by up to 20 flips the winner in roughly
-  25–50% of seeds in most scenarios. This is the "knife-edge" problem from the design notes; the
-  batch runner measures it so it can be tuned against.
-- **Difficulty has cliffs.** Small enemy stat changes can swing win rates a lot, because the side
-  that walks into range first tends to lose. Mirror matches: holding beats advancing.
-- **Throughput:** about 40–50 µs per unit turn, so 35–80 ten-unit battles per second per core.
+- **Tempo is still knife-edge in small fights.** Skirmish (2v2) still swings 44 points on a
+  ±30 head start, and jittered openings still flip about as often as a re-roll would (ratio
+  ~0.8), meaning the AI dynamics themselves are chaotic. Ideas not yet tried: AI that values
+  "let them come to me" explicitly (tempo-aware danger), simultaneous resolution of same-tick
+  actions, or smaller per-tile movement costs.
+- **Throughput:** about 40–50 µs per unit turn; with the longer default fights, 30–50 ten-unit
+  battles per second per core.
   Fine for now; profile before building map generation (`ai.ts` position scoring and pathing
   are the hot spots).
 - Not built yet: smart-unit lookahead, interactables, "being caught" as a state, shields as
