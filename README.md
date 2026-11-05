@@ -35,7 +35,7 @@ npm run typecheck                        # also checks the sim has no DOM/Node d
 
 **Runs:** press **Start run** for the roguelike loop (difficulty and seed come from the header). You
 start with a company of five. Each battle you tick who deploys (the map limits how many) and choose
-where they form up; enemy strength rises 4% per battle. Afterwards deployed units gain XP (knocked-out
+where they form up; enemy strength rises 5% per battle. Afterwards deployed units gain XP (knocked-out
 units half, and they're fatigued next fight), and you pick a reward: a recruit, training, a trinket,
 or rest (+1 heart). Losses cost 1-3 hearts by how badly they went; at 0 the run is over.
 
@@ -195,7 +195,10 @@ Findings so far:
 2. The difficulty turns the player's win rate into a result: easy wins at >= 15%, normal at
    >= 35%, hard at >= 55%. (At exact parity the raw win rate is ~35-45%, because the player's side
    tends to step into range first, so normal sits at 35 to give even fights to the player.)
-3. One of the samples with that result is replayed, chosen by margin: comfortable on easy
+   Samples are also spread over the chosen formation spot and its 8 neighbours, so the result
+   reflects "roughly here with this roster": a one-tile shift can't flip it.
+3. One of the samples with that result is replayed (preferably one formed up exactly where you
+   chose), chosen by margin: comfortable on easy
    (75th percentile of the winner's remaining HP), typical on normal, scrappy on hard. The seed box
    only varies which nearby battle is shown.
 
@@ -265,32 +268,40 @@ animation cues, so it shows whichever battle the settle step picked. three.js ma
 
 `src/run/run.ts` (pure TS, deterministic from the run seed; the browser and the auto-player share it).
 
-- Roster: start with 5 (Aldric, Wren, Oswin, Kesh, Sela), up to 8. Recruits come from rewards.
+- Roster: start with 5 (Aldric, Wren, Oswin, Kesh, Sela), up to 8. Recruits come from rewards
+  (including Aeris, a flyer).
 - Encounters: the five scenarios in a shuffled order per cycle; the roster replaces the scenario's
-  preset units and forms up at the chosen spot. Enemy strength +4% per battle (`ramp`).
+  preset units and forms up at the chosen spot. Enemy strength +5% per battle (`ramp`).
 - Progression: 100 XP per battle (50 if knocked out); the next level costs 100 + 50 per level gained,
   so growth is front-loaded and the ramp catches up. A level gives +2 HP and +1 to the class's main
   stat every other level. Training gives +2 to a stat (+4 HP); trinkets go up to 2 per unit.
 - Hearts: 5 (max 5). A loss costs 1 / 2 / 3 hearts when the enemy finished with under 35% /
   under 70% / more of its HP. 3 reward offers after a win, 2 after a loss.
 
-`npm run autorun -- --runs 16 --ramp 4 --policy sensible|careless` plays whole runs headlessly
+`npm run autorun -- --runs 24 --ramp 5 --policy sensible|careless` plays whole runs headlessly
 (sensible: deploys its highest levels, rests when low, recruits to 6, then trains; careless: random
-deployment and rewards). Measured on normal, 16 runs each (noisy):
+deployment and rewards). Measured on normal with all maps elevated, Cliffside in the rotation and
+smoothed settling, 24 runs each:
 
 | ramp | sensible: battles per run [10th-90th], battles won | careless |
 |---|---|---|
-| 3% | 10 [6-22], 77% | 9 [6-13], 66% |
-| 4% | 14 [6-21], 77% | 8 [4-10], 60% |
-| 5% | 10 [6-15], 72% | 8 [4-11], 58% |
+| 3% | 52 [31-60], 92% (runs cap at 60) | 11 [7-20], 73% |
+| 4% | 26 [16-38], 83% | 12 [6-18], 69% |
+| 5% (default) | 16 [12-22], 78% | 10 [6-13], 65% |
+
+Before smoothing, sensible runs died at a median of 9 battles at every ramp: the 2v2 skirmish
+settled as a loss from most formation spots (0% one row up, 92% on its default row) and cost 3
+hearts each time.
 
 ## Known issues and next steps
 
 - **Elevation everywhere, flyers in one fight:** every map has heights now (hills, ridges, gantries,
   hummocks, a knoll; furnace pits in the foundry). Flyers: Aeris, a winged-folk skyguard (in
-  Cliffside, and recruitable in runs), and two enemy harpies in Cliffside. The run auto-player
-  numbers above predate elevation and Cliffside.
-- **Run loop balance is first-pass.** The auto-player numbers come from 16 runs per cell. Skirmish
+  Cliffside, and recruitable in runs), and two enemy harpies in Cliffside.
+- **2v2 fights are placement-fragile underneath.** Smoothed settling hides it, but the raw skirmish
+  still swings hard between adjacent rows (who meets whom first). The skirmish needed a big enemy
+  nerf (-58% power) to settle at ~2/3 on the smoothed measure.
+- **Run loop balance is first-pass.** The auto-player numbers come from 24 runs per cell. Skirmish
   (2 slots) is the most common run-ender. Retrying a lost battle (design notes) isn't built yet.
 - **Scenarios represent early-run fights.** At +0% enemy strength they settle as wins on normal for
   typical play (skirmish is the exception at a 54% raw rate). Difficulty is meant to come from a

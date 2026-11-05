@@ -22,7 +22,7 @@ const from = Number(flag("from", "1"));
 const policy = flag("policy", "sensible");
 const verbose = args.includes("--verbose");
 const config = {
-  ramp: Number(flag("ramp", "4")),
+  ramp: Number(flag("ramp", "5")),
   difficulty: flag("difficulty", "normal") as Difficulty,
   samples: Number(flag("samples", "12")),
 };

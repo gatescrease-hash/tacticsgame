@@ -30,7 +30,7 @@ export const DEFAULT_RUN: RunConfig = {
   startingRoster: ["aldric", "wren", "oswin", "kesh", "sela"],
   hearts: 5,
   maxHearts: 5,
-  ramp: 4,
+  ramp: 5,
   difficulty: "normal",
   samples: 24,
   maxRoster: 8,
