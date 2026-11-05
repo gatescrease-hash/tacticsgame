@@ -27,6 +27,7 @@
           </select>
         </label>
         <button id="fight">Fight!</button>
+        <button id="run-start" class="secondary" title="Start a roguelike run with the chosen difficulty and seed">Start run</button>
         <button id="pause" class="secondary" hidden>Pause</button>
         <button id="back" class="secondary" hidden>Back to setup</button>
       </div>
@@ -44,6 +45,18 @@
           <ul id="enemies" class="roster enemy"></ul>
           <h2>Your company</h2>
           <ul id="roster" class="roster"></ul>
+        </div>
+        <div id="run-panel" hidden>
+          <div class="run-status"><span id="run-hearts" class="hearts"></span><span id="run-meta"></span></div>
+          <h2 id="run-encounter-title">Next battle</h2>
+          <p id="run-scouting" class="scouting"></p>
+          <h2>Your company <span id="run-slots" class="meta"></span></h2>
+          <ul id="run-roster" class="roster"></ul>
+        </div>
+        <div id="result-panel" hidden>
+          <h2 id="result-title"></h2>
+          <ul id="result-notes" class="notes"></ul>
+          <div id="result-actions" class="offers"></div>
         </div>
         <div id="battle-panel" hidden>
           <h2>Battle log</h2>

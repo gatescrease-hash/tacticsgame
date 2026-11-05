@@ -6,7 +6,7 @@ export * from "./types.js";
 export * from "./log.js";
 export { Rng } from "./rng.js";
 export { Grid, manhattan, hasLineOfSight } from "./grid.js";
-export { runBattle, setupBattle, createUnit, previewTurnOrder, snapshot, type BattleResult } from "./battle.js";
+export { runBattle, setupBattle, createUnit, previewTurnOrder, snapshot, type BattleResult, type UnitExtras } from "./battle.js";
 export type { BattleOptions, BattleState, Rules } from "./state.js";
 export { BASELINE_RULES, DEFAULT_RULES } from "./state.js";
 export { formatLog, describeEvent } from "./format.js";

@@ -1,7 +1,7 @@
 import type { Grid } from "./grid.js";
 import type { BattleEvent, BattleLog } from "./log.js";
 import type { Rng } from "./rng.js";
-import type { Content, Pos, ScenarioDef, Side, Unit } from "./types.js";
+import type { Content, Modifier, Pos, ScenarioDef, Side, Unit } from "./types.js";
 
 /**
  * Global combat rules. These are the knobs tested by `npm run sensitivity`
@@ -92,6 +92,13 @@ export interface BattleOptions {
   placements?: Record<number, Pos>;
   /** Leave these scenario unit indexes out of the battle (benched). */
   benched?: number[];
+  /**
+   * A run's roster: replaces the scenario's player units. Each entry is a unit id
+   * plus run-persistent extras (progression mods, trinkets). They start at `anchor`
+   * (default: the scenario's first player tile) and form up from there.
+   */
+  roster?: { unitId: string; mods?: Modifier[]; trinkets?: string[] }[];
+  anchor?: Pos;
   /** Override combat rules (merged over DEFAULT_RULES). */
   rules?: Partial<Rules>;
 }

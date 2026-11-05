@@ -34,12 +34,18 @@ function need<T>(table: Record<string, T>, id: string, what: string): T {
 }
 
 /** Build a runtime unit from content. Layers: personal + race -> class -> gear -> passives. */
-export function createUnit(content: Content, unitId: string, side: Side, uid: number): Unit {
+/** Run-persistent extras layered onto a unit: progression mods and extra trinkets. */
+export interface UnitExtras {
+  mods?: Modifier[];
+  trinkets?: string[];
+}
+
+export function createUnit(content: Content, unitId: string, side: Side, uid: number, extras: UnitExtras = {}): Unit {
   const def = need(content.units, unitId, "unit");
   const race = need(content.races, def.raceId, "race");
   const cls = need(content.classes, def.classId, "class");
   const weapon = need(content.weapons, def.weaponId, "weapon");
-  const trinkets = def.trinkets.map((id) => need(content.trinkets, id, "trinket"));
+  const trinkets = [...def.trinkets, ...(extras.trinkets ?? [])].map((id) => need(content.trinkets, id, "trinket"));
   const traits: TraitDef[] = def.traits.map((id) => need(content.traits, id, "trait"));
 
   const base: Stats = { ...def.stats };
@@ -52,6 +58,7 @@ export function createUnit(content: Content, unitId: string, side: Side, uid: nu
     ...Object.entries(cls.baseBonus).map(([k, v]) => ({ key: k as keyof Stats, op: "flat" as const, value: v ?? 0 })),
     ...trinkets.flatMap((t) => t.mods),
     ...passives.flatMap((p) => p.mods ?? []),
+    ...(extras.mods ?? []),
   ];
 
   const weights: Weights = { ...DEFAULT_WEIGHTS };
@@ -101,10 +108,19 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
   const grid = new Grid(scenario.map);
   const rules: Rules = { ...DEFAULT_RULES, ...opts.rules };
   const benched = new Set(opts.benched ?? []);
+  // A run's roster replaces the scenario's preset player units; they start at the anchor and form up.
+  const anchor = opts.anchor ?? scenario.units.find((su) => su.side === "player")?.pos ?? { x: 0, y: 0 };
+  const entries: { unitId: string; side: Side; pos: Pos; extras?: UnitExtras; index: number }[] = opts.roster
+    ? [
+        ...opts.roster.map((r) => ({ unitId: r.unitId, side: "player" as const, pos: anchor, extras: r, index: -1 })),
+        ...scenario.units.flatMap((su, i) => (su.side === "enemy" ? [{ ...su, index: i }] : [])),
+      ]
+    : scenario.units.map((su, i) => ({ ...su, index: i }));
   const units: Unit[] = [];
-  scenario.units.forEach((su, i) => {
-    if (benched.has(i)) return;
-    const u = createUnit(content, su.unitId, su.side, units.length);
+  entries.forEach((su) => {
+    const i = su.index;
+    if (i >= 0 && benched.has(i)) return;
+    const u = createUnit(content, su.unitId, su.side, units.length, su.extras);
     if (su.side === "enemy" && scenario.enemyMods) u.staticMods.push(...scenario.enemyMods);
     if (su.side === "enemy" && opts.enemyPower) {
       u.staticMods.push({ key: "hp", op: "pct", value: opts.enemyPower }, { key: "damageDealt", op: "pct", value: opts.enemyPower });
@@ -112,7 +128,7 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
     if (rules.hpScale !== 100) u.staticMods.push({ key: "hp", op: "pct", value: rules.hpScale - 100 });
     u.cache.clear();
     u.hp = maxHp(u);
-    u.pos = { ...(opts.placements?.[i] ?? su.pos) };
+    u.pos = { ...((i >= 0 ? opts.placements?.[i] : undefined) ?? su.pos) };
     units.push(u);
   });
 

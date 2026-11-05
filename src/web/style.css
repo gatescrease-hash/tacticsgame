@@ -72,3 +72,11 @@ canvas { display: block; background: var(--panel); border-radius: 6px; max-width
 @media (max-width: 700px) {
   .log { height: 260px; }
 }
+
+.run-status { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.hearts { color: var(--enemy); font-size: 18px; letter-spacing: 2px; }
+.notes { margin: 0 0 12px; padding-left: 18px; }
+.offers { display: flex; flex-direction: column; gap: 8px; }
+.offers button { text-align: left; padding: 10px 12px; }
+.tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--line); color: var(--text); margin-left: 4px; }
+.tag.warn { background: var(--enemy); color: #fff; }

@@ -1,5 +1,5 @@
 /**
- * Browser front end. Two screens:
+ * Browser front end. Single battles and roguelike runs (src/run). Screens:
  *  - Setup: place units inside the deploy zone, bench units, read the scouting
  *    report and preview the opening turn order.
  *  - Battle: the fight is baked in a web worker, then replayed from the log.
@@ -7,7 +7,19 @@
  */
 import { content, scenarioIds } from "../content/index.js";
 import { describeEvent, previewTurnOrder, type BattleEvent, type BattleLog, type Difficulty, type Pos, type UnitSnapshot } from "../sim/index.js";
-import type { BakeRequest } from "./bake.worker.js";
+import type { BakeRequest, BakeResponse } from "./bake.worker.js";
+import {
+  applyResult,
+  battlesWon,
+  chooseOffer,
+  currentEncounter,
+  defaultDeployment,
+  newRun,
+  unitMods,
+  xpToNext,
+  type BattleRecord,
+  type RunState,
+} from "../run/run.js";
 
 const TILE = 56;
 
@@ -17,6 +29,7 @@ const seedInput = $<HTMLInputElement>("seed");
 const difficultySel = $<HTMLSelectElement>("difficulty");
 const speedSel = $<HTMLSelectElement>("speed");
 const fightBtn = $<HTMLButtonElement>("fight");
+const runBtn = $<HTMLButtonElement>("run-start");
 const pauseBtn = $<HTMLButtonElement>("pause");
 const backBtn = $<HTMLButtonElement>("back");
 const canvas = $<HTMLCanvasElement>("board");
@@ -128,6 +141,11 @@ function renderTurnbar(label: string, order: { name: string; side: "player" | "e
   );
 }
 
+const PANELS = ["setup-panel", "run-panel", "result-panel", "battle-panel"];
+function showPanel(id: string) {
+  for (const p of PANELS) $(p).hidden = p !== id;
+}
+
 // ------------------------------------------------------------------ setup screen
 
 interface SetupState {
@@ -141,7 +159,8 @@ interface SetupState {
 }
 
 let setup: SetupState;
-let screen: "setup" | "battle" = "setup";
+let screen: "setup" | "battle" | "run-setup" | "result" = "setup";
+let mode: "single" | "run" = "single";
 
 for (const id of scenarioIds) scenarioSel.add(new Option(content.scenarios[id]!.name, id));
 scenarioSel.value = "patrol";
@@ -159,12 +178,14 @@ function showSetup() {
   screen = "setup";
   stopPlayback();
   banner.hidden = true;
-  $("setup-panel").hidden = false;
-  $("battle-panel").hidden = true;
+  mode = "single";
+  showPanel("setup-panel");
   pauseBtn.hidden = true;
   backBtn.hidden = true;
   fightBtn.hidden = false;
+  runBtn.hidden = false;
   scenarioSel.disabled = false;
+  difficultySel.disabled = false;
   hint.textContent =
     "Click a highlighted tile to choose where your squad forms up; they arrange themselves by role (melee front, ranged behind). Untick units to bench them. Then press Fight!";
   const sc = content.scenarios[setup.scenarioId]!;
@@ -293,6 +314,7 @@ function tileFromEvent(ev: MouseEvent): Pos {
 }
 
 canvas.addEventListener("click", (ev) => {
+  if (screen === "run-setup") return runBoardClick(ev);
   if (screen !== "setup") return;
   const sc = content.scenarios[setup.scenarioId]!;
   const p = tileFromEvent(ev);
@@ -358,22 +380,17 @@ function stopPlayback() {
 fightBtn.addEventListener("click", () => {
   fightBtn.disabled = true;
   fightBtn.textContent = "Baking…";
-  const req: BakeRequest = { scenario: setup.scenarioId, seed: Number(seedInput.value), difficulty: difficultySel.value as Difficulty, opts: opts() };
+  const req: BakeRequest =
+    mode === "run" && run
+      ? { kind: "run", run, deployed: runDeployed, anchor: runAnchor, seed: Number(seedInput.value) }
+      : { kind: "single", scenario: setup.scenarioId, seed: Number(seedInput.value), difficulty: difficultySel.value as Difficulty, opts: opts() };
   worker.postMessage(req);
 });
-
-interface BakeResponse {
-  log: BattleLog;
-  winner: string;
-  ms: number;
-  winProb: number;
-  samples: number;
-  margin: number;
-}
 
 worker.onmessage = (ev: MessageEvent<BakeResponse>) => {
   fightBtn.disabled = false;
   fightBtn.textContent = "Fight!";
+  pendingRecord = ev.data.record ?? null;
   startPlayback(ev.data);
 };
 
@@ -391,7 +408,13 @@ pauseBtn.addEventListener("click", () => {
   }
 });
 
-backBtn.addEventListener("click", () => showSetup());
+backBtn.addEventListener("click", () => {
+  if (mode === "run") {
+    // Skip the rest of the replay: the result is already settled.
+    stopPlayback();
+    showRunResult();
+  } else showSetup();
+});
 
 function startPlayback(bake: BakeResponse) {
   const { log } = bake;
@@ -399,12 +422,13 @@ function startPlayback(bake: BakeResponse) {
   if (!start || start.kind !== "start") return;
   stopPlayback();
   screen = "battle";
-  $("setup-panel").hidden = true;
-  $("battle-panel").hidden = false;
+  showPanel("battle-panel");
   pauseBtn.hidden = false;
   pauseBtn.textContent = "Pause";
   backBtn.hidden = false;
+  backBtn.textContent = mode === "run" ? "Skip to result" : "Back to setup";
   fightBtn.hidden = true;
+  runBtn.hidden = true;
   scenarioSel.disabled = true;
   banner.hidden = true;
   logEl.replaceChildren();
@@ -496,6 +520,7 @@ function applyEvent(e: BattleEvent, now: number) {
       banner.hidden = false;
       banner.textContent = e.winner === "player" ? "Victory" : e.winner === "enemy" ? "Defeat" : "Draw";
       pauseBtn.hidden = true;
+      if (mode === "run") window.setTimeout(() => screen === "battle" && showRunResult(), 1500);
       break;
     default:
       break;
@@ -588,8 +613,186 @@ function draw(now: number) {
   }
 }
 
+
+// ------------------------------------------------------------------ roguelike run
+
+let run: RunState | null = null;
+let runDeployed: string[] = [];
+let runAnchor: Pos | null = null;
+let pendingRecord: BattleRecord | null = null;
+
+runBtn.addEventListener("click", () => {
+  run = newRun(Number(seedInput.value) || 1, { difficulty: difficultySel.value as Difficulty });
+  showRunSetup();
+});
+
+function showRunSetup() {
+  if (!run) return;
+  mode = "run";
+  screen = "run-setup";
+  stopPlayback();
+  banner.hidden = true;
+  showPanel("run-panel");
+  pauseBtn.hidden = true;
+  backBtn.hidden = true;
+  fightBtn.hidden = false;
+  runBtn.hidden = true;
+  scenarioSel.disabled = true;
+  difficultySel.disabled = true;
+  const enc = currentEncounter(content, run);
+  runDeployed = defaultDeployment(run, enc.slots);
+  runAnchor = null;
+  const sc = content.scenarios[enc.scenario]!;
+  sizeCanvas(sc.map[0]!.length, sc.map.length);
+  hint.textContent = "Tick who deploys (the map limits how many), click a highlighted tile to choose where they form up, then Fight!";
+  renderRunPanel();
+  drawRunSetup();
+}
+
+function hearts(n: number, max: number): string {
+  return "\u2665".repeat(n) + "\u2661".repeat(Math.max(0, max - n));
+}
+
+function renderRunPanel() {
+  if (!run) return;
+  const enc = currentEncounter(content, run);
+  const sc = content.scenarios[enc.scenario]!;
+  $("run-hearts").textContent = hearts(run.hearts, run.config.maxHearts);
+  $("run-meta").textContent = `Battle ${run.battle + 1} · won ${battlesWon(run)} · ${run.config.difficulty}`;
+  $("run-encounter-title").textContent = `${sc.name} (enemy strength +${enc.enemyPower}%)`;
+  $("run-scouting").textContent = sc.scouting;
+  $("run-slots").textContent = `${runDeployed.length}/${enc.slots} deployed`;
+  const items = run.roster.map((r) => {
+    const def = content.units[r.unitId]!;
+    const li = document.createElement("li");
+    const on = runDeployed.includes(r.unitId);
+    if (!on) li.className = "benched";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = on;
+    box.disabled = !on && runDeployed.length >= enc.slots;
+    box.addEventListener("change", () => {
+      if (box.checked) runDeployed.push(r.unitId);
+      else if (runDeployed.length > 1) runDeployed = runDeployed.filter((id) => id !== r.unitId);
+      renderRunPanel();
+      drawRunSetup();
+    });
+    const train = Object.entries(r.training).map(([k, v]) => `+${v} ${k}`).join(", ");
+    const trinkets = [...def.trinkets, ...r.trinkets].map((t) => content.trinkets[t]!.name).join(", ");
+    const label = document.createElement("span");
+    label.innerHTML =
+      `<strong>${def.name}</strong> <span class="meta">${content.classes[def.classId]!.name} · Lv ${r.level} (${r.xp}/${xpToNext(r.level)} xp)` +
+      `${train ? ` · ${train}` : ""}${trinkets ? ` · ${trinkets}` : ""}</span>` +
+      (r.fatigued ? `<span class="tag warn" title="Knocked out last battle: -10% damage">fatigued</span>` : "");
+    li.append(box, label);
+    return li;
+  });
+  $("run-roster").replaceChildren(...items);
+}
+
+function runPreview() {
+  if (!run) return null;
+  const enc = currentEncounter(content, run);
+  const roster = runDeployed.map((id) => {
+    const r = run!.roster.find((x) => x.unitId === id)!;
+    return { unitId: id, mods: unitMods(content, r), trinkets: r.trinkets };
+  });
+  return previewTurnOrder(content, enc.scenario, 12, { roster, enemyPower: enc.enemyPower, ...(runAnchor ? { anchor: runAnchor } : {}) });
+}
+
+function drawRunSetup() {
+  if (!run) return;
+  const enc = currentEncounter(content, run);
+  const sc = content.scenarios[enc.scenario]!;
+  const c = colors();
+  drawMap(sc.map, c);
+  const z = sc.deployZone;
+  for (let y = z.y0; y <= z.y1; y++) {
+    for (let x = z.x0; x <= z.x1; x++) {
+      if (sc.map[y]![x] === "#") continue;
+      ctx.fillStyle = c.zone;
+      ctx.fillRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2);
+    }
+  }
+  for (const su of sc.units) if (su.side === "enemy") drawUnitToken(su.pos.x, su.pos.y, "?", "enemy", c, { alpha: 0.55 });
+  const preview = runPreview();
+  if (preview) {
+    renderTurnbar("Opening order:", preview.order.map((uid) => preview.units[uid]!));
+    for (const u of preview.units) if (u.side === "player") drawUnitToken(u.pos.x, u.pos.y, initials(u.name), "player", c);
+  }
+  if (runAnchor) {
+    ctx.strokeStyle = c.accent;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeRect(runAnchor.x * TILE + 4, runAnchor.y * TILE + 4, TILE - 8, TILE - 8);
+    ctx.setLineDash([]);
+  }
+}
+
+function runBoardClick(ev: MouseEvent) {
+  if (!run) return;
+  const sc = content.scenarios[currentEncounter(content, run).scenario]!;
+  const p = tileFromEvent(ev);
+  const z = sc.deployZone;
+  if (p.x < z.x0 || p.x > z.x1 || p.y < z.y0 || p.y > z.y1 || sc.map[p.y]?.[p.x] === "#") return;
+  runAnchor = p;
+  drawRunSetup();
+}
+
+/** After a run battle: apply it, then show level-ups and rewards (or the end of the run). */
+function showRunResult() {
+  if (!run) return;
+  screen = "result";
+  banner.hidden = true;
+  showPanel("result-panel");
+  pauseBtn.hidden = true;
+  backBtn.hidden = true;
+  const notes: string[] = [];
+  if (pendingRecord) {
+    const rec = pendingRecord;
+    pendingRecord = null;
+    const before = new Map(run.roster.map((r) => [r.unitId, r.level]));
+    applyResult(content, run, rec);
+    notes.push(rec.won ? `Victory at ${content.scenarios[rec.scenario]!.name}.` : `Defeat at ${content.scenarios[rec.scenario]!.name}: lost ${rec.heartsLost} heart${rec.heartsLost > 1 ? "s" : ""}.`);
+    for (const id of rec.knockedOut) notes.push(`${content.units[id]!.name} was knocked out: half XP, and fatigued next battle.`);
+    for (const r of run.roster) {
+      const was = before.get(r.unitId);
+      if (was !== undefined && r.level > was) notes.push(`${content.units[r.unitId]!.name} reached level ${r.level}.`);
+    }
+  }
+  $("result-notes").replaceChildren(...notes.map((n) => Object.assign(document.createElement("li"), { textContent: n })));
+  const actions = $("result-actions");
+  if (run.over) {
+    $("result-title").textContent = `Run over: ${battlesWon(run)} battles won of ${run.history.length}`;
+    const again = Object.assign(document.createElement("button"), { textContent: "Start a new run" });
+    again.addEventListener("click", () => {
+      run = newRun((Number(seedInput.value) || 1) + run!.history.length, { difficulty: difficultySel.value as Difficulty });
+      showRunSetup();
+    });
+    const leave = Object.assign(document.createElement("button"), { textContent: "Back to single battles", className: "secondary" });
+    leave.addEventListener("click", () => {
+      run = null;
+      showSetup();
+    });
+    actions.replaceChildren(again, leave);
+    return;
+  }
+  $("result-title").textContent = `${hearts(run.hearts, run.config.maxHearts)}  Choose a reward`;
+  actions.replaceChildren(
+    ...(run.offers ?? []).map((o, i) => {
+      const b = Object.assign(document.createElement("button"), { textContent: o.label, className: "secondary" });
+      b.addEventListener("click", () => {
+        chooseOffer(run!, i);
+        showRunSetup();
+      });
+      return b;
+    }),
+  );
+}
+
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   if (screen === "setup") drawSetup();
+  if (screen === "run-setup") drawRunSetup();
 });
 
 startSetup(scenarioSel.value);
