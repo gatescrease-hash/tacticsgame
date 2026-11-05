@@ -1,13 +1,13 @@
 import { debugCandidates, decide } from "./ai.js";
-import { advance, nextActor, openingGauge, projectTurnOrder, ticksToNextEvent } from "./clock.js";
+import { advance, nextActor, openingGauge, projectTurnOrder, THRESHOLD, ticksToNextEvent } from "./clock.js";
 import { basicAttack, executeAbility, inRangeFrom } from "./combat.js";
 import { firePassives, say } from "./effects.js";
 import { arrangeFormation } from "./formation.js";
-import { Grid, manhattan } from "./grid.js";
+import { Grid, firstStep, manhattan, pathCosts } from "./grid.js";
 import { Rng } from "./rng.js";
 import { DEFAULT_RULES, emit, type BattleOptions, type BattleState, type Rules } from "./state.js";
 import { updateStatuses } from "./statuses.js";
-import { maxHp, stepCostAt } from "./stats.js";
+import { maxHp, stepCost, stepCostAt } from "./stats.js";
 import type { BattleLog, UnitSnapshot } from "./log.js";
 import type { AbilityDef, Content, Modifier, PassiveDef, Pos, Side, Stats, TraitDef, Unit, Weights } from "./types.js";
 
@@ -86,6 +86,8 @@ export function createUnit(content: Content, unitId: string, side: Side, uid: nu
     lastReason: null,
     idle: 0,
     meters: {},
+    committed: null,
+    plan: null,
     cache: new Map(),
   };
   const abilities: AbilityDef[] = [basicAttack(u), ...cls.abilities.map((id) => need(content.abilities, id, "ability"))];
@@ -229,6 +231,18 @@ function takeTurn(s: BattleState, u: Unit): void {
   if (!u.alive) return;
   updateIntent(s, u);
 
+  // Stride: keep walking an existing plan without re-deciding, unless something changed.
+  if (u.plan) {
+    const step = nextPlanStep(s, u);
+    if (step) {
+      u.plan!.steps--;
+      doMove(s, u, step);
+      if (u.plan && (u.plan.steps <= 0 || (u.pos.x === u.plan.dest.x && u.pos.y === u.plan.dest.y))) u.plan = null;
+      return;
+    }
+    u.plan = null;
+  }
+
   const { choice, candidates } = decide(s, u);
   if (s.opts.debug) emit(s, { t: s.t, kind: "decide", uid: u.uid, chosen: choice.label, candidates: debugCandidates(candidates) });
 
@@ -236,29 +250,17 @@ function takeTurn(s: BattleState, u: Unit): void {
   switch (choice.kind) {
     case "ability":
       if (choice.reason !== "attack") say(s, u, choice.reason);
+      if (choice.target.side !== u.side) u.committed = choice.target.uid;
       executeAbility(s, u, choice.ability, choice.target);
       return;
     case "move": {
       if (choice.reason !== "advance" || u.lastReason === null) say(s, u, choice.reason);
-      const from = { ...u.pos };
-      const cost = stepCostAt(u, s.grid, choice.to);
-      // Enemies adjacent before the step and not after may punish the disengage.
-      const leaving = s.units.filter((e) => e.alive && e.side !== u.side && manhattan(e.pos, from) === 1 && manhattan(e.pos, choice.to) > 1);
-      for (const e of leaving) firePassives(s, e, "onEnemyDisengage", u, { melee: true });
-      u.gauge -= cost;
-      if (!u.alive) return;
-      const wasInRange = s.rules.charge && anyTargetInRange(s, u);
-      u.pos = { ...choice.to };
-      emit(s, { t: s.t, kind: "move", uid: u.uid, from, to: { ...choice.to }, cost });
-      // Charge: closing into range lets the unit strike now, paying with gauge debt.
-      // This removes the penalty for being the one who steps into range first.
-      if (s.rules.charge && !wasInRange && u.alive) {
-        const strike = decide(s, u, { abilitiesOnly: true }).choice;
-        if (strike.kind === "ability") {
-          say(s, u, strike.reason === "attack" ? "advance" : strike.reason);
-          executeAbility(s, u, strike.ability, strike.target);
-        }
+      if (choice.target) u.committed = choice.target.uid;
+      const dest = choice.dest;
+      if (s.rules.stride > 1 && dest && (dest.x !== choice.to.x || dest.y !== choice.to.y)) {
+        u.plan = { dest: { ...dest }, steps: s.rules.stride - 1, hp: u.hp, reason: choice.reason };
       }
+      doMove(s, u, choice.to);
       return;
     }
     case "wait":
@@ -266,6 +268,45 @@ function takeTurn(s: BattleState, u: Unit): void {
       emit(s, { t: s.t, kind: "wait", uid: u.uid, cost: WAIT_COST });
       return;
   }
+}
+
+function doMove(s: BattleState, u: Unit, to: Pos): void {
+  const from = { ...u.pos };
+  const cost = stepCostAt(u, s.grid, to);
+  // Enemies adjacent before the step and not after may punish the disengage.
+  const leaving = s.units.filter((e) => e.alive && e.side !== u.side && manhattan(e.pos, from) === 1 && manhattan(e.pos, to) > 1);
+  for (const e of leaving) firePassives(s, e, "onEnemyDisengage", u, { melee: true });
+  u.gauge -= cost;
+  if (!u.alive) return;
+  const wasInRange = s.rules.charge && anyTargetInRange(s, u);
+  u.pos = { ...to };
+  emit(s, { t: s.t, kind: "move", uid: u.uid, from, to: { ...to }, cost });
+  // Charge: closing into range lets the unit strike now, paying with gauge debt.
+  // This removes the penalty for being the one who steps into range first.
+  if (s.rules.charge && !wasInRange && u.alive) {
+    u.plan = null;
+    const strike = decide(s, u, { abilitiesOnly: true }).choice;
+    if (strike.kind === "ability") {
+      say(s, u, strike.reason === "attack" ? "advance" : strike.reason);
+      if (strike.target.side !== u.side) u.committed = strike.target.uid;
+      executeAbility(s, u, strike.ability, strike.target);
+    }
+  }
+}
+
+/**
+ * The next step of a unit's move plan, or null if the plan should be dropped:
+ * it got hurt, an enemy is now in range, its target fell, or the way is blocked.
+ */
+function nextPlanStep(s: BattleState, u: Unit): Pos | null {
+  const plan = u.plan!;
+  if (u.hp < plan.hp || plan.steps <= 0 || anyTargetInRange(s, u)) return null;
+  if (u.committed !== null && !s.units[u.committed]?.alive) return null;
+  const occupied = new Uint8Array(s.grid.width * s.grid.height);
+  for (const v of s.units) if (v.alive && v !== u) occupied[s.grid.index(v.pos)] = 1;
+  const { prev, cost } = pathCosts(s.grid, u.pos, (_p, tile) => stepCost(u, tile), (p) => occupied[p.y * s.grid.width + p.x] === 0, THRESHOLD * 5);
+  if (cost[s.grid.index(plan.dest)]! < 0) return null;
+  return firstStep(s.grid, prev, u.pos, plan.dest);
 }
 
 function anyTargetInRange(s: BattleState, u: Unit): boolean {

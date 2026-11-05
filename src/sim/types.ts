@@ -377,6 +377,10 @@ export interface Unit {
   /** Set by the commander layer each turn. */
   intent: "engage" | "hold";
   lastReason: Reason | null;
+  /** AI commitment: uid of the enemy this unit is working on (rules.commitTarget). */
+  committed: number | null;
+  /** AI commitment: a multi-step move in progress (rules.stride). */
+  plan: { dest: Pos; steps: number; hp: number; reason: Reason } | null;
   /** Bounded-luck meters per roll stage (rules.luck = "meter"). */
   meters: Record<string, number>;
   /** Consecutive turns spent holding. Impatience: waiting erodes caution so standoffs break. */

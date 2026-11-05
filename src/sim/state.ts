@@ -36,6 +36,16 @@ export interface Rules {
   seededLuck: boolean;
   /** The player's squad picks one shared target and concentrates on it. */
   focusFire: boolean;
+  /** AI commitment: units prefer their current target (x1.5) and switch only for a clearly better one. */
+  commitTarget: boolean;
+  /**
+   * AI commitment: a unit that sets off toward a goal keeps walking that path for up to
+   * this many steps without re-deciding, unless hurt, an enemy comes in range, or the
+   * way is blocked. 0 = re-decide every step.
+   */
+  stride: number;
+  /** Before contact, penalty per tile for stepping more than 2 tiles from the nearest ally. 0 = off. */
+  cohesion: number;
   /**
    * The player's squad arranges itself by role at battle start, centred on where
    * the player put it: melee in front, support in the middle, ranged behind.
@@ -51,7 +61,7 @@ export interface Rules {
 }
 
 export const BASELINE_RULES: Rules = {
-  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, seededLuck: true, focusFire: false, formation: false, playerHold: 0,
+  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, seededLuck: true, focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: false, playerHold: 0,
 };
 
 /**
@@ -60,7 +70,7 @@ export const BASELINE_RULES: Rules = {
  * points and made every difficulty curve monotonic (see README "Sensitivity").
  */
 export const DEFAULT_RULES: Rules = {
-  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, luck: "dice", hitDice: 1, seededLuck: true, focusFire: false, formation: false, playerHold: 0,
+  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, luck: "dice", hitDice: 1, seededLuck: true, focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: false, playerHold: 0,
 };
 
 export interface BattleOptions {

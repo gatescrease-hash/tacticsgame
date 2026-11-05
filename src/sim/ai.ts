@@ -18,7 +18,17 @@ import type { AbilityDef, Doctrine, Pos, Reason, Unit, Weights } from "./types.j
 
 export type Choice =
   | { kind: "ability"; ability: AbilityDef; target: Unit; reason: Reason; score: number; label: string; parts: Record<string, number> }
-  | { kind: "move"; to: Pos; reason: Reason; score: number; label: string; parts: Record<string, number> }
+  | {
+      kind: "move";
+      to: Pos;
+      reason: Reason;
+      score: number;
+      label: string;
+      parts: Record<string, number>;
+      /** Where this step is heading (for multi-step plans) and who it's after. */
+      dest?: Pos;
+      target?: Unit;
+    }
   | { kind: "wait"; reason: Reason; score: number; label: string; parts: Record<string, number> };
 
 interface Ctx {
@@ -87,6 +97,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     focus: null,
   };
   if (s.rules.focusFire && me.side === "player") ctx.focus = squadFocus(ctx.allies, ctx.enemies);
+  if (me.committed !== null && !s.units[me.committed]?.alive) me.committed = null;
   // Shared threat picture for this decision: what each enemy could do to me before my next turn.
   for (const e of ctx.enemies) {
     const moveTiles = idiv(THRESHOLD, Math.max(1, stat(e, "moveCost"))) + 1;
@@ -159,7 +170,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
   };
 
   // Goals: for each target worth acting on, the cheapest tile to act from.
-  interface Goal { perTick: number; spot: number; reason: Reason }
+  interface Goal { perTick: number; spot: number; reason: Reason; target: Unit | null }
   const goals: Goal[] = [];
   const hereIdx = s.grid.index(me.pos);
   const holding = me.intent === "hold";
@@ -171,7 +182,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
         const spot = inRangeFrom(s, me, a, me.pos, e) ? hereIdx : firstInRange(a, e);
         if (spot < 0) continue;
         const v = abilityValue(ctx, a, e, s.grid.posOf(spot));
-        if (v.value > 0) goals.push({ perTick: idiv(v.value * 100, tempoCost(a.cost, ctx.w)), spot, reason: "advance" });
+        if (v.value > 0) goals.push({ perTick: idiv(v.value * 100, tempoCost(a.cost, ctx.w)), spot, reason: "advance", target: e });
       }
     }
     // Nothing in reach at all: march toward the nearest enemy.
@@ -180,7 +191,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
       for (const i of reachable) {
         if (spot < 0 || manhattan(s.grid.posOf(i), nearest[0].pos) < manhattan(s.grid.posOf(spot), nearest[0].pos)) spot = i;
       }
-      if (spot >= 0) goals.push({ perTick: 30, spot, reason: "advance" });
+      if (spot >= 0) goals.push({ perTick: 30, spot, reason: "advance", target: nearest[0] });
     }
   }
   // Healers want to be within reach of whoever is hurting most.
@@ -191,7 +202,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
       const spot = inRangeFrom(s, me, healAbility, me.pos, ally) ? hereIdx : firstInRange(healAbility, ally);
       if (spot < 0) continue;
       const missing = idiv((maxHp(ally) - ally.hp) * 100, maxHp(ally));
-      goals.push({ perTick: idiv(missing * ctx.w.support, 10), spot, reason: "support" });
+      goals.push({ perTick: idiv(missing * ctx.w.support, 10), spot, reason: "support", target: null });
     }
   }
 
@@ -205,8 +216,8 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
    * Holding and stepping are both scored with this one function, so a unit
    * can't flip-flop between two tiles while nothing else changes.
    */
-  const positionValue = (p: number): { value: number; reason: Reason } => {
-    let best = { value: 0, reason: "hold" as Reason };
+  const positionValue = (p: number): { value: number; reason: Reason; goal: Goal | null } => {
+    let best: { value: number; reason: Reason; goal: Goal | null } = { value: 0, reason: "hold", goal: null };
     const aggr = Math.max(1, ctx.w.aggression);
     const cp = p === hereIdx ? 0 : cost[p]!;
     for (const g of goals) {
@@ -214,7 +225,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
       // Floats here (not idiv): long distances must still leave a gradient to follow.
       // Plain IEEE arithmetic is deterministic across machines.
       const value = (g.perTick * 90) / (100 + (remaining * 10) / aggr);
-      if (value > best.value) best = { value, reason: g.reason };
+      if (value > best.value) best = { value, reason: g.reason, goal: g };
     }
     if (p !== hereIdx) {
       const pos = s.grid.posOf(p);
@@ -223,7 +234,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
         for (const e of ctx.enemies) {
           if (!inRangeFrom(s, me, a, pos, e)) continue;
           const value = (abilityValue(ctx, a, e, pos).value * 90) / tempoCost(a.cost, ctx.w);
-          if (value > best.value) best = { value, reason: "advance" };
+          if (value > best.value) best = { value, reason: "advance", goal: null };
         }
       }
     }
@@ -245,15 +256,34 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     return idiv(pct * Math.max(4, ctx.w.danger), 10);
   };
 
+  // Cohesion: before contact, don't run more than 2 tiles ahead of the nearest ally.
+  const cohesionCost = (to: Pos): number => {
+    if (!s.rules.cohesion || dangerHere > 0) return 0;
+    let nearest = Infinity;
+    for (const a of ctx.allies) if (a !== me) nearest = Math.min(nearest, manhattan(a.pos, to));
+    return nearest === Infinity ? 0 : Math.max(0, nearest - 2) * s.rules.cohesion;
+  };
+
   // One step at a time: each free neighbour, scored by its position value.
   for (const step of s.grid.neighbours(me.pos)) {
     const i = s.grid.index(step);
     if (cost[i]! <= 0) continue;
     const pv = positionValue(i);
     const d = danger(ctx, step);
-    const score = pv.value - dangerPenalty(d) - disengageCost(step);
+    const coh = cohesionCost(step);
+    const score = pv.value - dangerPenalty(d) - disengageCost(step) - coh;
     const reason: Reason = d < dangerHere && pv.value <= here.value ? "retreat" : pv.reason === "hold" ? "advance" : pv.reason;
-    cands.push({ kind: "move", to: step, reason, score, label: `${reason} to ${step.x},${step.y}`, parts: { future: pv.value, danger: -dangerPenalty(d) } });
+    const dest = pv.goal ? s.grid.posOf(pv.goal.spot) : step;
+    cands.push({
+      kind: "move",
+      to: step,
+      reason,
+      score,
+      label: `${reason} to ${step.x},${step.y}`,
+      parts: { future: pv.value, danger: -dangerPenalty(d), cohesion: -coh },
+      dest,
+      ...(pv.goal?.target ? { target: pv.goal.target } : {}),
+    });
   }
 
   // Escape a danger plateau: head for the safest tile within a few steps.
@@ -274,7 +304,15 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
       if (spotDanger < d) {
         const pv = positionValue(s.grid.index(step));
         const score = pv.value - dangerPenalty(d) + idiv(dangerPenalty(d) - dangerPenalty(spotDanger), 2) - disengageCost(step);
-        cands.push({ kind: "move", to: step, reason: "retreat", score, label: `fall back to ${step.x},${step.y}`, parts: { future: pv.value, danger: -dangerPenalty(d) } });
+        cands.push({
+          kind: "move",
+          to: step,
+          reason: "retreat",
+          score,
+          label: `fall back to ${step.x},${step.y}`,
+          parts: { future: pv.value, danger: -dangerPenalty(d) },
+          dest: s.grid.posOf(spot),
+        });
       }
     }
   }
@@ -327,6 +365,12 @@ function danger(ctx: Ctx, p: Pos): number {
 
 /** Doctrine target priorities (percent). */
 function targetMult(ctx: Ctx, v: Unit): number {
+  const base = doctrineMult(ctx, v);
+  // Commitment: keep working on the current target unless another is clearly better.
+  return ctx.s.rules.commitTarget && v.uid === ctx.me.committed ? idiv(base * 3, 2) : base;
+}
+
+function doctrineMult(ctx: Ctx, v: Unit): number {
   const d = ctx.s.scenario.doctrine;
   if (ctx.me.side !== "enemy") return v === ctx.focus ? 200 : 100;
   if (d.kind === "hunt" && v.cls.tags.includes(d.tag)) return 220;
