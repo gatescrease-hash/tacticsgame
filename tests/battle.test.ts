@@ -44,11 +44,28 @@ describe("runBattle", () => {
   });
 
   it("respects placements and benching", () => {
-    const r = runBattle(content, "patrol", 1, { placements: { 0: { x: 0, y: 0 } }, benched: [1] });
+    const r = runBattle(content, "patrol", 1, { placements: { 0: { x: 0, y: 0 } }, benched: [1], rules: { formation: false } });
     const start = r.log[0]!;
     if (start.kind !== "start") throw new Error("missing start");
     expect(start.units[0]!.pos).toEqual({ x: 0, y: 0 });
     expect(start.units.some((u) => u.name === "Kesh")).toBe(false);
+  });
+
+  it("formation arranges the squad by role around the chosen spot", () => {
+    const all = (p: { x: number; y: number }) => ({ 0: p, 1: p, 2: p, 3: p, 4: p });
+    const formed = (p: { x: number; y: number }) => {
+      const e = runBattle(content, "patrol", 1, { placements: all(p) }).log[0]!;
+      if (e.kind !== "start") throw new Error("missing start");
+      return e.units.filter((u) => u.side === "player");
+    };
+    const top = formed({ x: 1, y: 1 });
+    const bottom = formed({ x: 1, y: 6 });
+    const meanY = (us: { pos: { y: number } }[]) => us.reduce((a, u) => a + u.pos.y, 0) / us.length;
+    expect(meanY(top)).toBeLessThan(meanY(bottom));
+    // Melee in front (larger x, toward the enemy), ranged behind.
+    const x = (us: typeof top, name: string) => us.find((u) => u.name === name)!.pos.x;
+    expect(x(top, "Aldric")).toBeGreaterThan(x(top, "Wren"));
+    expect(new Set(top.map((u) => `${u.pos.x},${u.pos.y}`)).size).toBe(top.length);
   });
 
   it("previews an opening turn order", () => {

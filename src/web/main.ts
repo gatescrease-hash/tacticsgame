@@ -133,7 +133,10 @@ interface SetupState {
   scenarioId: string;
   placements: Record<number, Pos>;
   benched: Set<number>;
-  selected: number | null;
+  /** Where each deployed unit ends up after the squad forms up (scenario index -> tile). */
+  formed: Map<number, Pos>;
+  /** The tile the player chose for the squad to form up around. */
+  anchor: Pos | null;
 }
 
 let setup: SetupState;
@@ -144,7 +147,7 @@ scenarioSel.value = "patrol";
 
 function startSetup(scenarioId: string) {
   const sc = content.scenarios[scenarioId]!;
-  setup = { scenarioId, placements: {}, benched: new Set(), selected: null };
+  setup = { scenarioId, placements: {}, benched: new Set(), formed: new Map(), anchor: null };
   sc.units.forEach((u, i) => {
     if (u.side === "player") setup.placements[i] = { ...u.pos };
   });
@@ -161,7 +164,8 @@ function showSetup() {
   backBtn.hidden = true;
   fightBtn.hidden = false;
   scenarioSel.disabled = false;
-  hint.textContent = "Click one of your units, then a highlighted tile to move it there. Untick units to bench them. Then press Fight!";
+  hint.textContent =
+    "Click a highlighted tile to choose where your squad forms up; they arrange themselves by role (melee front, ranged behind). Untick units to bench them. Then press Fight!";
   const sc = content.scenarios[setup.scenarioId]!;
   sizeCanvas(sc.map[0]!.length, sc.map.length);
   renderScouting();
@@ -197,7 +201,7 @@ function renderRoster() {
     if (su.side !== "player") return;
     const def = content.units[su.unitId]!;
     const li = document.createElement("li");
-    li.className = (setup.benched.has(i) ? "benched " : "") + (setup.selected === i ? "selected" : "");
+    li.className = setup.benched.has(i) ? "benched" : "";
     const box = document.createElement("input");
     box.type = "checkbox";
     box.checked = !setup.benched.has(i);
@@ -210,7 +214,6 @@ function renderRoster() {
           return;
         }
         setup.benched.add(i);
-        if (setup.selected === i) setup.selected = null;
       } else setup.benched.delete(i);
       renderRoster();
       refreshPreview();
@@ -221,13 +224,6 @@ function renderRoster() {
     text.innerHTML = `<span class="dot"></span> `;
     const label = document.createElement("span");
     label.innerHTML = `<strong>${def.name}</strong> <span class="meta">${content.races[def.raceId]!.name} ${content.classes[def.classId]!.name} · ${content.weapons[def.weaponId]!.name} · ${traits}</span>`;
-    label.style.cursor = "pointer";
-    label.addEventListener("click", () => {
-      if (setup.benched.has(i)) return;
-      setup.selected = setup.selected === i ? null : i;
-      renderRoster();
-      drawSetup();
-    });
     li.append(box, text, label);
     items.push(li);
   });
@@ -241,6 +237,14 @@ function opts() {
 function refreshPreview() {
   const { units, order } = previewTurnOrder(content, setup.scenarioId, 12, opts());
   renderTurnbar("Opening order:", order.map((uid) => units[uid]!));
+  // Battle units are created in scenario order, skipping benched ones.
+  setup.formed.clear();
+  let uid = 0;
+  content.scenarios[setup.scenarioId]!.units.forEach((_, i) => {
+    if (setup.benched.has(i)) return;
+    const snap = units[uid++]!;
+    if (snap.side === "player") setup.formed.set(i, snap.pos);
+  });
 }
 
 function inZone(p: Pos): boolean {
@@ -267,9 +271,18 @@ function drawSetup() {
       return;
     }
     if (setup.benched.has(i)) return;
-    const p = setup.placements[i]!;
-    drawUnitToken(p.x, p.y, initials(def.name), "player", c, { ring: setup.selected === i });
+    const p = setup.formed.get(i) ?? setup.placements[i]!;
+    drawUnitToken(p.x, p.y, initials(def.name), "player", c);
   });
+  if (setup.anchor) {
+    // Mark where the squad forms up.
+    const { x, y } = setup.anchor;
+    ctx.strokeStyle = c.accent;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeRect(x * TILE + 4, y * TILE + 4, TILE - 8, TILE - 8);
+    ctx.setLineDash([]);
+  }
 }
 
 function tileFromEvent(ev: MouseEvent): Pos {
@@ -282,19 +295,13 @@ canvas.addEventListener("click", (ev) => {
   if (screen !== "setup") return;
   const sc = content.scenarios[setup.scenarioId]!;
   const p = tileFromEvent(ev);
-  const here = Object.entries(setup.placements).find(([i, q]) => !setup.benched.has(+i) && q.x === p.x && q.y === p.y);
-  if (setup.selected === null) {
-    if (here) setup.selected = +here[0];
-  } else if (here && +here[0] === setup.selected) {
-    setup.selected = null;
-  } else if (inZone(p) && sc.map[p.y]![p.x] !== "#" && !sc.units.some((u) => u.side === "enemy" && u.pos.x === p.x && u.pos.y === p.y)) {
-    if (here) setup.placements[+here[0]] = { ...setup.placements[setup.selected]! }; // swap
-    setup.placements[setup.selected] = p;
-    setup.selected = null;
-  } else if (here) {
-    setup.selected = +here[0];
-  }
-  renderRoster();
+  if (!inZone(p) || sc.map[p.y]?.[p.x] === "#") return;
+  // The squad forms up around the chosen tile: every deployed unit starts there and the
+  // formation spreads them out by role.
+  setup.anchor = p;
+  sc.units.forEach((u, i) => {
+    if (u.side === "player") setup.placements[i] = { ...p };
+  });
   refreshPreview();
   drawSetup();
 });

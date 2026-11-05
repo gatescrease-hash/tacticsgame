@@ -70,7 +70,7 @@ export const BASELINE_RULES: Rules = {
  * points and made every difficulty curve monotonic (see README "Sensitivity").
  */
 export const DEFAULT_RULES: Rules = {
-  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, luck: "dice", hitDice: 1, seededLuck: true, focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: false, playerHold: 0,
+  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, luck: "meter", hitDice: 1, seededLuck: true, focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: true, playerHold: 0,
 };
 
 export interface BattleOptions {
