@@ -132,6 +132,31 @@ Result on the five tuned scenarios (80 seeds per point):
 Difficulty curves are now monotonic and smoother, and the head-start effect is roughly 40% smaller.
 Battles run about 50% longer and throughput drops accordingly.
 
+## Robustness (placement and parity)
+
+Goal: outcomes decided by *which* units you bring and how they're trained, not by the exact tile
+you dropped them on or by streaks of dice; and an even fight should go to the player.
+`npm run robustness` samples random placements x seeds per scenario plus mirror fixtures
+(identical squads both sides); `--curve` prints each mirror's win % as enemy power runs -30..+30.
+
+Extra rules (all off by default, see `Rules`): `formation` (squad arranges itself by role around
+where you put it), `playerHold` (squad lets the enemy come), `luck: "meter"` (bounded luck: per-unit
+meters, no streaks) or `hitDice: 2` (Fire Emblem true hit), `focusFire` (shared squad target),
+`seededLuck: false` (meters start fixed: the seed changes nothing).
+
+Findings so far:
+
+- `formation` makes exact placement matter less in real scenarios (e.g. wolves with random
+  placements: 33% -> 78% player wins).
+- Mirror fights stay coin flips under every luck mode. The 20%->80% band is 20-30% enemy power wide
+  (40-60% for 5v5), so even a 10% stronger side only wins ~70-80%.
+- With luck fully fixed (no randomness at all), outcomes still swing with placement and are
+  *non-monotonic* in enemy strength. The knife edge is deterministic chaos in the battle dynamics:
+  every AI choice is an argmax, units re-decide every tile, kills compound. Dice smoothing alone
+  can't fix it; tripling HP narrows the band only somewhat.
+- Hold and focus fire shift the tipping point strongly for some compositions (3v3 with archer and
+  healer: +30% enemy power to tip) but not others (melee 2v2, 5v5).
+
 ## Known issues and next steps
 
 - **Tempo is still knife-edge in small fights.** Skirmish (2v2) still swings 44 points on a
