@@ -274,7 +274,7 @@ function makeOffers(content: Content, run: RunState, n: number): Offer[] {
 }
 
 /** Units that can join the player's company (the rest of the content is enemies). */
-export const PLAYER_RECRUITS = ["vex", "sela", "mira", "ilya", "gorm", "aldric", "wren", "oswin", "kesh"];
+export const PLAYER_RECRUITS = ["vex", "sela", "mira", "ilya", "gorm", "aeris", "aldric", "wren", "oswin", "kesh"];
 
 /** Take a reward and move on to the next battle. */
 export function chooseOffer(run: RunState, index: number): void {

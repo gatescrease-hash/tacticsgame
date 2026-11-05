@@ -66,7 +66,8 @@ export function inRangeFrom(s: BattleState, u: Unit, a: AbilityDef, from: Pos, t
   const ranged = isRangedAbility(a);
   const maxRange = a.range.max + (ranged && dh >= HIGH_GROUND ? 1 : 0);
   if (d < a.range.min || d > maxRange) return false;
-  if (!ranged && Math.abs(dh) > Math.max(1, a.range.max)) return false;
+  // Flyers swoop: their melee reaches any height.
+  if (!ranged && !isFlyer(u) && Math.abs(dh) > Math.max(1, a.range.max)) return false;
   return d <= 1 || hasLineOfSight(s.grid, from, target.pos);
 }
 

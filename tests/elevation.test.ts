@@ -118,6 +118,29 @@ describe("elevation", () => {
     expect(kesh.alive).toBe(false);
   });
 
+  it("flyers ignore cliffs and pits, swoop on any height, and can't be knocked into a pit", () => {
+    const flyers: ScenarioDef = {
+      ...scenario,
+      id: "flyers",
+      units: [
+        { unitId: "aeris", side: "player", pos: { x: 2, y: 0 } },
+        { unitId: "wren", side: "enemy", pos: { x: 3, y: 0 } },
+      ],
+    };
+    const w2: Content = { ...content, scenarios: { ...content.scenarios, flyers } };
+    const s = setupBattle(w2, "flyers", 1, { rules: { formation: false } });
+    const [aeris, wren] = s.units as [any, any];
+    expect(edgeCost(aeris, s.grid, { x: 2, y: 0 }, { x: 3, y: 0 })).toBeGreaterThan(0); // up a 2 m cliff
+    expect(edgeCost(aeris, s.grid, { x: 2, y: 2 }, { x: 2, y: 3 })).toBeGreaterThan(0); // into a pit
+    expect(inRangeFrom(s, aeris, basicAttack(aeris), aeris.pos, wren)).toBe(true);
+    // Pushed from the west towards the pit at (2,3): a flyer just drifts over it.
+    aeris.pos = { x: 1, y: 3 };
+    wren.pos = { x: 0, y: 3 };
+    executeAbility(s, wren, world.abilities.crushing_blow!, aeris);
+    expect(s.log.some((e) => e.kind === "dot" && e.status === "fall")).toBe(false);
+    expect(aeris.alive).toBe(true);
+  });
+
   it("the cliffs scenario plays out deterministically", () => {
     const a = runBattle(content, "cliffs", 3);
     const b = runBattle(content, "cliffs", 3);

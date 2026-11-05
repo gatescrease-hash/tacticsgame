@@ -5,7 +5,7 @@ import { firstStep, manhattan, pathCosts } from "./grid.js";
 import { idiv } from "./math.js";
 import { alliesOf, enemiesOf, type BattleState } from "./state.js";
 import { hasStatus, hasStatusTag, maxHp, stat } from "./stats.js";
-import { canLeap, edgeCost, jumpOf } from "./movement.js";
+import { canLeap, edgeCost, isFlyer, jumpOf } from "./movement.js";
 import type { CandidateDebug } from "./log.js";
 import type { AbilityDef, Doctrine, Pos, Reason, Unit, Weights } from "./types.js";
 
@@ -114,7 +114,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     // An enemy spreads its attention: split its threat across everyone on my side it could reach.
     const reach = moveTiles + range;
     const options = Math.max(1, ctx.allies.filter((a) => manhattan(a.pos, e.pos) <= reach).length);
-    ctx.threats.push({ e, exp: idiv(exp * 2, options + 1), reach, melee, climb: jumpOf(e) });
+    ctx.threats.push({ e, exp: idiv(exp * 2, options + 1), reach, melee, climb: isFlyer(e) ? 99 : jumpOf(e) });
   }
 
   const cands: Choice[] = [];

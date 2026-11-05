@@ -69,6 +69,17 @@ export const weapons = {
     packet: [{ type: "bludgeoning", share: 100 }],
     might: 5, accuracy: 0, cost: 110, range: { min: 1, max: 1 }, canParry: false, ignoresParry: false,
   },
+  javelin: {
+    // Thrown or thrust: reaches 2 tiles, and (being melee) any flyer can use it from above.
+    id: "javelin", name: "Javelin", type: "javelin",
+    packet: [{ type: "piercing", share: 100 }],
+    might: 6, accuracy: 5, cost: 90, range: { min: 1, max: 2 }, canParry: false, ignoresParry: false,
+  },
+  talons: {
+    id: "talons", name: "Talons", type: "talons",
+    packet: [{ type: "slashing", share: 100 }],
+    might: 4, accuracy: 5, cost: 70, range: { min: 1, max: 1 }, canParry: false, ignoresParry: true,
+  },
 } satisfies Record<string, WeaponDef>;
 
 /** One or two trinkets per unit. Gear is about this battle; abilities are who the unit is. */

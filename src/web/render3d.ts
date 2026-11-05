@@ -79,7 +79,32 @@ const SKIN: Record<string, number> = {
   golem: 0x8b8780,
   steamwork: 0xb08d4a,
   mudling: 0x6e5235,
+  winged: 0xf0d2b0,
+  harpy: 0x9a7b5a,
 };
+
+const FLYERS = new Set(["winged", "harpy"]);
+
+/** A pair of flat, low-poly wings, tagged so the renderer can flap them. */
+function addWings(g: THREE.Group, color: number, span: number, y: number, z: number): void {
+  const feather = mat(color, { side: THREE.DoubleSide });
+  for (const side of [-1, 1]) {
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(span, 0.12);
+    shape.lineTo(span * 0.85, -0.12);
+    shape.lineTo(span * 0.45, -0.2);
+    shape.lineTo(0, -0.1);
+    const wing = new THREE.Mesh(new THREE.ShapeGeometry(shape), feather);
+    wing.castShadow = true;
+    const pivot = new THREE.Group();
+    pivot.position.set(0.06 * side, y, z);
+    pivot.scale.x = side;
+    pivot.add(wing);
+    pivot.userData.wing = side;
+    g.add(pivot);
+  }
+}
 
 function mat(color: number | THREE.Color, extra: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.85, metalness: 0.05, ...extra });
@@ -134,6 +159,18 @@ function buildModel(u: UnitSnapshot, teamColor: number): THREE.Group {
     g.add(mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.06, 7), team, 0, 0.5, 0));
     return g;
   }
+  if (u.raceId === "harpy") {
+    const body = mesh(new THREE.IcosahedronGeometry(0.17, 0), skin, 0, 0.42, 0);
+    body.scale.set(1, 0.9, 1.25);
+    g.add(body);
+    g.add(mesh(new THREE.IcosahedronGeometry(0.1, 0), mat(0xe2c8a8), 0, 0.62, 0.12));
+    g.add(mesh(new THREE.ConeGeometry(0.035, 0.1, 4).rotateX(Math.PI / 2), mat(0xd9a640), 0, 0.6, 0.24));
+    g.add(mesh(new THREE.ConeGeometry(0.07, 0.22, 4).rotateX(-1.3), skin, 0, 0.38, -0.25));
+    for (const s of [-1, 1]) g.add(mesh(new THREE.ConeGeometry(0.03, 0.14, 3).rotateX(Math.PI), mat(0x3b3631), 0.07 * s, 0.24, 0.02));
+    g.add(mesh(new THREE.TorusGeometry(0.1, 0.025, 4, 8), team, 0, 0.5, 0.06));
+    addWings(g, 0x7a5c40, 0.5, 0.5, -0.02);
+    return g;
+  }
   if (u.raceId === "mudling") {
     const blob = mesh(new THREE.IcosahedronGeometry(0.3, 1), skin, 0, 0.3, 0);
     blob.scale.set(1.1, 0.85, 1);
@@ -150,6 +187,7 @@ function buildModel(u: UnitSnapshot, teamColor: number): THREE.Group {
   g.add(mesh(new THREE.CylinderGeometry(bodyW * 0.8, bodyW, 0.34, 6), team, 0, 0.36, 0));
   g.add(mesh(new THREE.IcosahedronGeometry(0.12, 0), skin, 0, 0.64, 0));
   if (u.raceId === "lizardfolk") g.add(mesh(new THREE.ConeGeometry(0.06, 0.26, 4).rotateX(-1.1), skin, 0, 0.18, -0.2));
+  if (u.raceId === "winged") addWings(g, 0xf4f1ea, 0.45, 0.48, -0.12);
 
   const hand = (side: number, obj: THREE.Object3D) => {
     obj.position.x += 0.22 * side;
@@ -217,6 +255,8 @@ interface UnitView {
   root: THREE.Group;
   model: THREE.Group;
   ring: THREE.Mesh;
+  /** Soft disc on the ground under flyers. */
+  shadow: THREE.Mesh;
   hpBack: THREE.Mesh;
   hpFill: THREE.Mesh;
   phase: number;
@@ -301,7 +341,8 @@ export class Battle3D {
   /** Ground surface height (world units) of one tile. */
   private tileTop(x: number, y: number): number {
     const ch = this.map[y]?.[x] ?? ".";
-    const base = ch === "~" ? 0.2 : ch === "O" ? 0 : (TILE_LOOK[ch] ?? TILE_LOOK["."]!).height;
+    // Over a pit, flyers hover at the level of the surrounding ground.
+    const base = ch === "~" ? 0.2 : ch === "O" ? 0.3 : (TILE_LOOK[ch] ?? TILE_LOOK["."]!).height;
     return base + (this.metres[y]?.[x] ?? 0) * METRE;
   }
 
@@ -405,6 +446,12 @@ export class Battle3D {
     );
     ring.position.y = 0.01;
     root.add(ring);
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.26, 12).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false }),
+    );
+    shadow.visible = false;
+    root.add(shadow);
     const hpBack = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.07), new THREE.MeshBasicMaterial({ color: 0x1b1b1b, depthTest: false }));
     const hpFill = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.05), new THREE.MeshBasicMaterial({ color: 0x4caf50, depthTest: false }));
     hpBack.renderOrder = 10;
@@ -420,7 +467,7 @@ export class Battle3D {
       }
     });
     this.units.set(u.uid, {
-      root, model, ring, hpBack, hpFill, phase: hash(u.uid, 3) * Math.PI * 2, yaw,
+      root, model, ring, shadow, hpBack, hpFill, phase: hash(u.uid, 3) * Math.PI * 2, yaw,
       lunge: null, flash: null, wobble: null, ko: null, materials,
     });
   }
@@ -614,7 +661,19 @@ export class Battle3D {
         const f = (now - u.wobble.start) / (u.wobble.end - u.wobble.start);
         x += Math.sin(f * Math.PI * 4) * 0.12 * (1 - f);
       }
+      const flyer = FLYERS.has(v.raceId);
+      if (flyer && !u.ko) {
+        // Flyers hover over the ground (or the pit) with a lazy bob; wings flap.
+        y += 0.38 + Math.sin(t * 3 + u.phase) * 0.06;
+        const flap = Math.sin(t * (now < v.moveEnd ? 18 : 7) + u.phase) * 0.55;
+        u.model.traverse((o) => {
+          if (o.userData.wing) o.rotation.y = -0.25 + flap * 0.6;
+        });
+      }
       u.root.position.set(x, y, z);
+      u.shadow.visible = flyer && !u.ko;
+      u.shadow.position.y = base.y - y + 0.02;
+      u.ring.position.y = base.y - y + 0.01;
       // Idle bob and sway (calmer when it's not your turn).
       const active = view.current === uid;
       const bob = Math.sin(t * (active ? 7 : 3.2) + u.phase);

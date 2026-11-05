@@ -52,4 +52,22 @@ export const races = {
     passives: [],
     moveTags: ["swampwalker"],
   },
+  winged: {
+    id: "winged",
+    name: "Winged folk",
+    // Light, hollow-boned flyers: they ignore height and pits, and can't be knocked into one.
+    profile: { mind: true, essence: "some", tags: ["flesh"] },
+    statBonus: { speed: 1, agility: 1, defense: -1, hp: -2 },
+    passives: [],
+    moveTags: ["flyer"],
+    lockedClasses: ["knight", "brute"],
+  },
+  harpy: {
+    id: "harpy",
+    name: "Harpy",
+    profile: { mind: true, essence: "some", tags: ["flesh", "beast"] },
+    statBonus: { speed: 2, agility: 2 },
+    passives: [],
+    moveTags: ["flyer"],
+  },
 } satisfies Record<string, RaceDef>;

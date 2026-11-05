@@ -32,6 +32,14 @@ export const scenarios: Record<string, ScenarioDef> = {
       "....#...",
       "........",
     ],
+    // Metres: a 1 m mound between the walls.
+    heights: [
+      "00000000",
+      "00011000",
+      "00111100",
+      "00011000",
+      "00000000",
+    ],
     deployZone: { x0: 0, y0: 0, x1: 1, y1: 4 },
     units: [
       { unitId: "aldric", side: "player", pos: { x: 0, y: 2 } },
@@ -53,6 +61,15 @@ export const scenarios: Record<string, ScenarioDef> = {
       "..#....#..",
       "..........",
     ],
+    // Metres: 1 m banks on the near corners, archer perches either side of the swamp.
+    heights: [
+      "1100000011",
+      "1100000011",
+      "0000000000",
+      "0000000000",
+      "0000000000",
+      "0000000000",
+    ],
     deployZone: { x0: 0, y0: 0, x1: 2, y1: 5 },
     units: [
       { unitId: "aldric", side: "player", pos: { x: 1, y: 2 } },
@@ -60,7 +77,7 @@ export const scenarios: Record<string, ScenarioDef> = {
       { unitId: "vex", side: "enemy", pos: { x: 8, y: 2 } },
       { unitId: "gorm", side: "enemy", pos: { x: 9, y: 3 } },
     ],
-    enemyMods: difficulty(50, 4, 5, 2, -35),
+    enemyMods: difficulty(50, 4, 5, 2, -5),
     doctrine: { kind: "advance" },
     scouting: "A duelist and a lizardfolk brute. The brute wades through swamp like it isn't there.",
   },
@@ -78,6 +95,17 @@ export const scenarios: Record<string, ScenarioDef> = {
       '..~~....""..',
       "............",
     ],
+    // Metres: a 1 m hill on your side; Arago holds a 1 m ridge with a 2 m crag (stepped) for a crossbow.
+    heights: [
+      "110000000122",
+      "110000000122",
+      "000000000111",
+      "000000000111",
+      "000000000111",
+      "000000000111",
+      "000000000111",
+      "000000000111",
+    ],
     deployZone: { x0: 0, y0: 0, x1: 2, y1: 7 },
     units: [
       { unitId: "aldric", side: "player", pos: { x: 2, y: 3 } },
@@ -92,23 +120,34 @@ export const scenarios: Record<string, ScenarioDef> = {
       { unitId: "arago_xbow_a", side: "enemy", pos: { x: 10, y: 1 } },
       { unitId: "arago_xbow_b", side: "enemy", pos: { x: 10, y: 6 } },
     ],
-    enemyMods: difficulty(20, 1, 2, 0, -8),
+    enemyMods: difficulty(20, 1, 2, 0, -13),
     doctrine: { kind: "advance" },
     scouting: "Six Arago soldiers. A knight and pikes up front, two crossbows behind, a sergeant who rallies them. Mostly chain and leather.",
   },
   foundry: {
     id: "foundry",
     name: "The foundry gate",
-    description: "Steam and stone. Nothing here has a mind to break.",
+    description: "Steam and stone, catwalks and furnace shafts. Nothing here has a mind to break.",
     map: [
       "....#..#....",
       "....#..#....",
       "............",
       "..#......#..",
-      "..#......#..",
+      "..#..OO..#..",
       "............",
       "....#..#....",
       "....#..#....",
+    ],
+    // Metres: a 1 m loading platform for the constructs, a 2 m gantry between the north walls (stepped).
+    heights: [
+      "000002200111",
+      "000002200111",
+      "000001100111",
+      "000000000111",
+      "000000000111",
+      "000000000111",
+      "000000000111",
+      "000000000111",
     ],
     deployZone: { x0: 0, y0: 0, x1: 2, y1: 7 },
     units: [
@@ -126,7 +165,7 @@ export const scenarios: Record<string, ScenarioDef> = {
     enemyMods: difficulty(20, 1, 1, 0, 12),
     doctrine: { kind: "advance" },
     scouting:
-      "A golem and three automatons, all plate and stone, advancing without formation. Minds won't break and fire won't bite stone. Bring something heavy, or something that conducts.",
+      "A golem and three automatons, all plate and stone, advancing without formation. Minds won't break and fire won't bite stone; the golem's blows can knock you into the furnace shafts. Bring something heavy, or something that conducts.",
   },
   marsh: {
     id: "marsh",
@@ -141,6 +180,17 @@ export const scenarios: Record<string, ScenarioDef> = {
       '..""..~~~...',
       "...~~~...~~.",
       "............",
+    ],
+    // Metres: 1 m hummocks under the thickets where the lizardfolk lurk.
+    heights: [
+      "000011001100",
+      "000000000000",
+      "000011000000",
+      "000000000110",
+      "000000000110",
+      "001100000000",
+      "000000000000",
+      "000000000000",
     ],
     deployZone: { x0: 0, y0: 0, x1: 2, y1: 7 },
     units: [
@@ -163,7 +213,7 @@ export const scenarios: Record<string, ScenarioDef> = {
   cliffs: {
     id: "cliffs",
     name: "Cliffside crossing",
-    description: "Crossbows on a bluff, a chasm in the middle, wolves below.",
+    description: "Crossbows on a bluff, a chasm in the middle, wolves below and harpies above.",
     map: [
       "............",
       "............",
@@ -193,16 +243,18 @@ export const scenarios: Record<string, ScenarioDef> = {
       { unitId: "wren", side: "player", pos: { x: 1, y: 4 } },
       { unitId: "sela", side: "player", pos: { x: 1, y: 5 } },
       { unitId: "oswin", side: "player", pos: { x: 0, y: 4 } },
+      { unitId: "aeris", side: "player", pos: { x: 0, y: 3 } },
       { unitId: "arago_xbow_a", side: "enemy", pos: { x: 10, y: 1 } },
       { unitId: "arago_xbow_b", side: "enemy", pos: { x: 9, y: 3 } },
-      { unitId: "arago_spear_a", side: "enemy", pos: { x: 9, y: 5 } },
+      { unitId: "harpy_a", side: "enemy", pos: { x: 11, y: 0 } },
+      { unitId: "harpy_b", side: "enemy", pos: { x: 7, y: 7 } },
       { unitId: "wolf_a", side: "enemy", pos: { x: 10, y: 6 } },
       { unitId: "wolf_b", side: "enemy", pos: { x: 11, y: 4 } },
     ],
-    enemyMods: difficulty(0, 0, 0, 0, 55),
+    enemyMods: difficulty(0, 0, 0, 0, 70),
     doctrine: { kind: "advance" },
     scouting:
-      "Arago crossbows dug in on a 2 m bluff; only the steps on its north side lead up. Wolves roam below and can leap the chasm. Bring something that jumps, or something that shoots back from high ground.",
+      "Arago crossbows dug in on a 2 m bluff; only the steps on its north side lead up. Wolves roam below and can leap the chasm; harpies circle overhead. Bring something that jumps or flies, or something that shoots back from high ground.",
   },
   wolves: {
     id: "wolves",
@@ -217,6 +269,17 @@ export const scenarios: Record<string, ScenarioDef> = {
       '......."....',
       "............",
       '..."........',
+    ],
+    // Metres: your camp sits on a 1 m knoll (wolves can leap up anyway).
+    heights: [
+      "000000000000",
+      "000000000000",
+      "000111100000",
+      "000111100000",
+      "000111100000",
+      "000111100000",
+      "000000000000",
+      "000000000000",
     ],
     deployZone: { x0: 3, y0: 2, x1: 6, y1: 5 },
     units: [

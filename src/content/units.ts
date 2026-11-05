@@ -22,6 +22,7 @@ export const units: Record<string, UnitDef> = Object.fromEntries(
     u("kesh", "Kesh", "lizardfolk", "skirmisher", "venom_dagger", s(19, 5, 6, 11, 6, 1, 1, 4, 2, 4, 5), ["reckless"]),
     u("mira", "Mira", "human", "stormcaller", "staff", s(18, 2, 4, 8, 3, 0, 8, 5, 3, 4, 4), ["smart"]),
     u("ilya", "Ilya", "human", "tactician", "staff", s(18, 3, 5, 9, 4, 0, 4, 8, 3, 6, 4), ["steady"], ["ring_of_haste"]),
+    u("aeris", "Aeris", "winged", "skyguard", "javelin", s(19, 6, 7, 10, 6, 1, 2, 4, 3, 5, 5), ["brave"]),
     u("gorm", "Gorm", "lizardfolk", "brute", "mace", s(26, 8, 4, 6, 2, 2, 0, 2, 2, 6, 2), ["dim"]),
     // ---------------- the kingdom of Arago (textbook tactics)
     u("arago_spear_a", "Pikeman Hal", "human", "spearman", "spear", s(27, 8, 5, 7, 3, 2, 1, 3, 3, 5, 3), ["steady"]),
@@ -42,6 +43,9 @@ export const units: Record<string, UnitDef> = Object.fromEntries(
     u("stalker_d", "Sandstalker", "lizardfolk", "sandstalker", "spear", s(24, 7, 7, 9, 5, 1, 1, 3, 2, 5, 3), ["cruel"]),
     u("mudling_a", "Mudling", "mudling", "mudling", "mud_slam", s(30, 8, 4, 5, 0, 1, 0, 0, 2, 10, 0), ["mindless"]),
     u("mudling_b", "Mudling", "mudling", "mudling", "mud_slam", s(30, 8, 4, 5, 0, 1, 0, 0, 2, 10, 0), ["mindless"]),
+    // ---------------- harpies (flyers)
+    u("harpy_a", "Shrike", "harpy", "swooper", "talons", s(16, 6, 6, 10, 6, 0, 0, 2, 2, 3, 3), ["cruel"]),
+    u("harpy_b", "Gale-wing", "harpy", "swooper", "talons", s(16, 6, 6, 10, 6, 0, 0, 2, 2, 3, 3), ["reckless"]),
     // ---------------- beasts (packs)
     u("wolf_a", "Greyfang", "wolf", "hunter", "fangs", s(19, 7, 6, 9, 6, 0, 0, 2, 2, 4, 3), ["cruel"]),
     u("wolf_b", "Blackmaw", "wolf", "hunter", "fangs", s(19, 7, 6, 9, 6, 0, 0, 2, 2, 3, 3), ["cruel"]),

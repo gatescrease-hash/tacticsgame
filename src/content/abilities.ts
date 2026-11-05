@@ -122,6 +122,15 @@ export const abilities = {
     ],
     tags: ["melee"],
   },
+  dive: {
+    id: "dive", name: "Dive", cost: 110, cooldown: 60,
+    range: { min: 1, max: 1 }, target: "enemy", shape: { kind: "single" }, affects: "enemies", check: "attack",
+    effects: [
+      { kind: "damage", packet: [{ type: "piercing", share: 100 }], power: { weapon: true, base: 4 } },
+      { kind: "push", tiles: 1 },
+    ],
+    tags: ["melee"], say: ["From above!"],
+  },
 } satisfies Record<string, AbilityDef>;
 
 /** Passives dominate: reliable without player input. */
