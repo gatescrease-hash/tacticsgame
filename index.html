@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tactics Autobattler</title>
+    <link rel="stylesheet" href="/src/web/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Tactics Autobattler <small>prototype</small></h1>
+      <div class="controls">
+        <label>Scenario <select id="scenario"></select></label>
+        <label>Seed <input id="seed" type="number" value="1" min="0" /></label>
+        <label>Speed
+          <select id="speed">
+            <option value="1">1x</option>
+            <option value="2" selected>2x</option>
+            <option value="4">4x</option>
+          </select>
+        </label>
+        <button id="play">Bake &amp; play</button>
+      </div>
+    </header>
+    <main>
+      <canvas id="board"></canvas>
+      <pre id="log"></pre>
+    </main>
+    <script type="module" src="/src/web/main.ts"></script>
+  </body>
+</html>

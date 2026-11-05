@@ -1,0 +1,24 @@
+{
+  "name": "tacticsgame",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Tactical RPG autobattler: set up your squad, then watch them fight.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "battle": "tsx src/cli/battle.ts",
+    "batch": "tsx src/cli/batch.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.sim.json && tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.3",
+    "vite": "^8.0.0",
+    "vitest": "^5.0.0"
+  }
+}
