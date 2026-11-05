@@ -24,6 +24,8 @@ anticipating every future need. It is fine to leave TODOs.
   tie-break orders. No `Math.random`, no `Date`. AI scores may use plain float arithmetic.
 - Battles are baked: the whole fight is simulated up front; the log (`src/sim/log.ts`) is the
   sim's only output. Rendering, speech bubbles and stats read the log, never sim internals.
+  Both renderers (2D canvas in `main.ts`, three.js in `render3d.ts`) follow this; animation cues
+  come from log events.
 - Simulation throughput matters (map generation will simulate thousands of battles).
   Check `npm run batch` battles/s after touching hot paths (`ai.ts`, `grid.ts`, `stats.ts`).
 - Content is data in `src/content`. New abilities should be built from existing effect pieces,

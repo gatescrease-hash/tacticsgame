@@ -8,6 +8,7 @@
 import { content, scenarioIds } from "../content/index.js";
 import { describeEvent, previewTurnOrder, type BattleEvent, type BattleLog, type Difficulty, type Pos, type UnitSnapshot } from "../sim/index.js";
 import type { BakeRequest, BakeResponse } from "./bake.worker.js";
+import { Battle3D } from "./render3d.js";
 import {
   applyResult,
   battlesWon,
@@ -33,6 +34,8 @@ const runBtn = $<HTMLButtonElement>("run-start");
 const pauseBtn = $<HTMLButtonElement>("pause");
 const backBtn = $<HTMLButtonElement>("back");
 const canvas = $<HTMLCanvasElement>("board");
+const stage3d = $<HTMLDivElement>("stage3d");
+const viewSel = $<HTMLSelectElement>("view");
 const banner = $<HTMLDivElement>("banner");
 const hint = $<HTMLParagraphElement>("hint");
 const turnbar = $<HTMLDivElement>("turnbar");
@@ -373,10 +376,30 @@ function speed(): number {
   return Number(speedSel.value);
 }
 
+let r3d: Battle3D | null = null;
+
 function stopPlayback() {
   if (play) cancelAnimationFrame(play.raf);
   play = null;
+  r3d?.dispose();
+  r3d = null;
+  stage3d.hidden = true;
+  canvas.hidden = false;
 }
+
+try {
+  const saved = localStorage.getItem("view");
+  if (saved === "2d" || saved === "3d") viewSel.value = saved;
+} catch {
+  // storage unavailable: keep the default
+}
+viewSel.addEventListener("change", () => {
+  try {
+    localStorage.setItem("view", viewSel.value);
+  } catch {
+    // ignore
+  }
+});
 
 fightBtn.addEventListener("click", () => {
   fightBtn.disabled = true;
@@ -443,6 +466,19 @@ function startPlayback(bake: BakeResponse) {
     start.units.map((u) => [u.uid, { ...u, x: u.pos.x, y: u.pos.y, from: u.pos, to: u.pos, moveStart: 0, moveEnd: 0, alive: true, statuses: new Map() }]),
   );
   play = { log, idx: 0, nextAt: performance.now(), paused: false, pausedAt: 0, units, current: null, floaters: [], bubbles: [], lines: [], map: start.map, raf: 0 };
+  if (viewSel.value === "3d") {
+    const c = colors();
+    stage3d.hidden = false;
+    const r = new Battle3D(stage3d, start.map, start.units, { background: c.panel, player: c.player, enemy: c.enemy, text: c.text, panel: c.panel });
+    if (r.ok) {
+      r3d = r;
+      canvas.hidden = true;
+      hint.textContent += " Drag to rotate, scroll to zoom.";
+    } else {
+      r.dispose();
+      stage3d.hidden = true;
+    }
+  }
   play.raf = requestAnimationFrame(frame);
 }
 
@@ -455,13 +491,16 @@ function frame(now: number) {
     p.nextAt = now + (DURATION[e.kind] ?? 0) / speed();
     p.idx++;
   }
-  draw(now);
+  updatePositions(now);
+  if (r3d) r3d.render(now, p);
+  else draw(now);
   p.raf = requestAnimationFrame(frame);
 }
 
 function applyEvent(e: BattleEvent, now: number) {
   const p = play!;
   const sp = speed();
+  r3d?.onEvent(e, now, sp, p);
   const u = (uid: number) => p.units.get(uid)!;
   const float = (uid: number, text: string, color: string) =>
     p.floaters.push({ uid, text, color, start: now, until: now + 900 / Math.min(sp, 2) });
@@ -536,12 +575,9 @@ function applyEvent(e: BattleEvent, now: number) {
   }
 }
 
-function draw(now: number) {
+/** Interpolate tile positions for moves in flight (shared by both renderers). */
+function updatePositions(now: number) {
   const p = play!;
-  const c = colors();
-  drawMap(p.map, c);
-  const centre = (x: number, y: number) => [x * TILE + TILE / 2, y * TILE + TILE / 2] as const;
-
   for (const x of p.units.values()) {
     if (now >= x.moveEnd) {
       x.x = x.to.x;
@@ -552,6 +588,15 @@ function draw(now: number) {
       x.y = x.from.y + (x.to.y - x.from.y) * f;
     }
   }
+  p.floaters = p.floaters.filter((f) => f.until > now);
+  p.bubbles = p.bubbles.filter((b) => b.until > now);
+}
+
+function draw(now: number) {
+  const p = play!;
+  const c = colors();
+  drawMap(p.map, c);
+  const centre = (x: number, y: number) => [x * TILE + TILE / 2, y * TILE + TILE / 2] as const;
 
   p.lines = p.lines.filter((l) => l.until > now);
   for (const l of p.lines) {

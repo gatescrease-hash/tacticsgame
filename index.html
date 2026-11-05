@@ -26,6 +26,12 @@
             <option value="4">4x</option>
           </select>
         </label>
+        <label>View
+          <select id="view">
+            <option value="3d" selected>3D</option>
+            <option value="2d">2D</option>
+          </select>
+        </label>
         <button id="fight">Fight!</button>
         <button id="run-start" class="secondary" title="Start a roguelike run with the chosen difficulty and seed">Start run</button>
         <button id="pause" class="secondary" hidden>Pause</button>
@@ -35,7 +41,7 @@
     <main>
       <section class="stage">
         <div id="turnbar" class="turnbar" aria-label="Turn order"></div>
-        <div class="board-wrap"><canvas id="board"></canvas><div id="banner" class="banner" hidden></div></div>
+        <div class="board-wrap"><canvas id="board"></canvas><div id="stage3d" class="stage3d" hidden></div><div id="banner" class="banner" hidden></div></div>
         <p id="hint" class="hint"></p>
       </section>
       <aside class="side">

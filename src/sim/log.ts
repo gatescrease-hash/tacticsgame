@@ -12,6 +12,10 @@ export interface UnitSnapshot {
   name: string;
   className: string;
   raceName: string;
+  /** Content ids, so renderers can pick a model. */
+  classId: string;
+  raceId: string;
+  weaponId: string;
   side: Side;
   pos: Pos;
   hp: number;

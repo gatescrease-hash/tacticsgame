@@ -80,3 +80,14 @@ canvas { display: block; background: var(--panel); border-radius: 6px; max-width
 .offers button { text-align: left; padding: 10px 12px; }
 .tag { font-size: 11px; padding: 1px 6px; border-radius: 8px; background: var(--line); color: var(--text); margin-left: 4px; }
 .tag.warn { background: var(--enemy); color: #fff; }
+
+/* 3D battle view */
+.stage3d { position: relative; width: min(100%, 860px); border-radius: 6px; overflow: hidden; cursor: grab; }
+.stage3d canvas { display: block; max-width: 100%; touch-action: none; }
+.overlay3d { position: absolute; left: 0; top: 0; pointer-events: none; }
+.overlay3d > div { position: absolute; left: 0; top: 0; white-space: nowrap; will-change: transform; }
+.float3d { font: 700 14px system-ui; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); }
+.bubble3d { font: 12px system-ui; background: var(--panel); color: var(--text); border: 1.5px solid var(--line); border-radius: 6px; padding: 2px 7px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.bubble3d.player { border-color: var(--player); }
+.bubble3d.enemy { border-color: var(--enemy); }
+.tag3d { font: 700 9px system-ui; background: rgba(0, 0, 0, 0.65); color: #fff; padding: 1px 3px; border-radius: 3px; }

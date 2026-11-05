@@ -28,6 +28,8 @@ npm run typecheck                        # also checks the sim has no DOM/Node d
 3. Press **Fight!** Your setup is simulated across 24 sample battles in a web worker; the
    difficulty settles the result from that win rate, and one of those battles is replayed at
    1x/2x/4x with HP bars, status tags, damage numbers, speech bubbles and a live turn-order bar.
+   Battles play in a 2.5D view by default (header: View 3D/2D): drag to rotate and tilt, scroll
+   to zoom.
 4. The result depends only on your setup (roster, bench, where the squad forms up). Changing the
    seed shows a different battle with the same result.
 
@@ -60,7 +62,8 @@ src/sim/             Pure, deterministic simulation. No DOM, no Node APIs (tscon
 src/content/         All game data as typed TS objects (hot-reloads in the dev server).
 src/cli/             Node entry points: single battle, batch runner.
 src/tools/stats.ts   Batch aggregation (win rates, damage share, ability use, KO rates).
-src/web/             Setup screen, web-worker baking, canvas playback.
+src/web/             Setup screens, web-worker baking, playback (2D canvas or render3d.ts).
+src/run/             The roguelike run loop (pure TS).
 tests/               Vitest tests.
 ```
 
@@ -231,6 +234,20 @@ Findings:
 - Each +5% of net enemy strength costs ~10-15 points of win rate, so a run ends fairly
   predictably once strength passes the player's level ("the wall"), with a narrow spread of run
   lengths. Real compounding needs the progression systems, so mistakes carry between battles.
+
+## 3D battle view
+
+`src/web/render3d.ts` (three.js) renders playback as a small diorama: tiles with height (stone walls,
+sunken water, thicket bushes), an orbit/pitch/zoom camera, and low-poly units built from primitives
+per class and race (knights with shield and helmet, archers with bows, mages in pointy hats, wolves
+on four legs, golems, steam automatons, mud blobs). Animations: idle bob and sway, hops between
+tiles, turning to face, melee lunges, projectiles for ranged attacks and spells, ring pulses for area
+abilities, hit flashes and dodge wobbles, heal sparkles, knockouts that topple and sink. Text
+(damage numbers, speech bubbles, status tags) is an HTML overlay so it stays crisp.
+
+It is pure presentation: it reads the same playback state as the 2D canvas plus log events as
+animation cues, so it shows whichever battle the settle step picked. three.js makes the bundle
+~630 kB (lazy-loading it is an easy later win).
 
 ## Run loop
 
