@@ -2,13 +2,14 @@ import { debugCandidates, decide } from "./ai.js";
 import { advance, nextActor, openingGauge, projectTurnOrder, ticksToNextEvent } from "./clock.js";
 import { basicAttack, executeAbility, inRangeFrom } from "./combat.js";
 import { firePassives, say } from "./effects.js";
+import { arrangeFormation } from "./formation.js";
 import { Grid, manhattan } from "./grid.js";
 import { Rng } from "./rng.js";
 import { DEFAULT_RULES, emit, type BattleOptions, type BattleState, type Rules } from "./state.js";
 import { updateStatuses } from "./statuses.js";
 import { maxHp, stepCostAt } from "./stats.js";
 import type { BattleLog, UnitSnapshot } from "./log.js";
-import type { AbilityDef, Content, Modifier, PassiveDef, Side, Stats, TraitDef, Unit, Weights } from "./types.js";
+import type { AbilityDef, Content, Modifier, PassiveDef, Pos, Side, Stats, TraitDef, Unit, Weights } from "./types.js";
 
 export type { BattleOptions, BattleState };
 
@@ -21,6 +22,8 @@ export interface BattleResult {
 }
 
 const WAIT_COST = 50;
+/** Ticks the player's squad will hold before advancing anyway (rules.playerHold). */
+const PLAYER_HOLD_LIMIT = 150;
 
 export const DEFAULT_WEIGHTS: Weights = { damage: 10, kill: 8, danger: 3, support: 8, aoe: 8, tempo: 10, aggression: 10 };
 
@@ -110,12 +113,31 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
     units.push(u);
   });
 
+  if (rules.formation) {
+    const enemies = units.filter((u) => u.side === "enemy");
+    const z = scenario.deployZone;
+    const tiles: Pos[] = [];
+    for (let y = z.y0; y <= z.y1; y++) {
+      for (let x = z.x0; x <= z.x1; x++) {
+        const p = { x, y };
+        if (grid.inBounds(p) && !grid.tile(p).blocked && !enemies.some((e) => e.pos.x === x && e.pos.y === y)) tiles.push(p);
+      }
+    }
+    const toward = {
+      x: Math.round(enemies.reduce((a, e) => a + e.pos.x, 0) / Math.max(1, enemies.length)),
+      y: Math.round(enemies.reduce((a, e) => a + e.pos.y, 0) / Math.max(1, enemies.length)),
+    };
+    arrangeFormation(units.filter((u) => u.side === "player"), tiles, toward);
+  }
+
+  const playerHolds = rules.playerHold > 0 && scenario.doctrine.kind !== "hold";
   const jitterRng = new Rng((seed ^ 0x9e3779b9) >>> 0);
   for (const u of units) {
     u.gauge = openingGauge(u);
     if (opts.gaugeJitter) u.gauge = Math.min(99, u.gauge + jitterRng.int(opts.gaugeJitter + 1));
     if (opts.tempoOffset && u.side === "player") u.gauge = Math.min(99, u.gauge + opts.tempoOffset);
     if (u.side === "enemy" && scenario.doctrine.kind === "hold") u.intent = "hold";
+    if (u.side === "player" && playerHolds) u.intent = "hold";
   }
   // Per-unit streams are seeded from (seed, uid) so a unit's luck doesn't depend on anyone else.
   const streams = units.map((u) => new Rng(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(u.uid + 1, 0x85ebca77)));
@@ -182,9 +204,11 @@ export function runBattle(content: Content, scenarioId: string, seed: number, op
 function updateIntent(s: BattleState, u: Unit): void {
   if (u.intent !== "hold") return;
   const d = s.scenario.doctrine;
-  const radius = d.kind === "hold" ? d.radius : 0;
+  const radius = u.side === "player" ? s.rules.playerHold : d.kind === "hold" ? d.radius : 0;
   const squad = s.units.filter((v) => v.side === u.side);
   const provoked =
+    // The player's squad doesn't wait forever for an enemy that won't come.
+    (u.side === "player" && s.t > PLAYER_HOLD_LIMIT) ||
     squad.some((v) => !v.alive || v.hp < maxHp(v)) ||
     squad.some((v) => v.alive && s.units.some((e) => e.alive && e.side !== u.side && manhattan(e.pos, v.pos) <= radius));
   if (provoked) {

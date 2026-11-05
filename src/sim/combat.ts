@@ -106,8 +106,30 @@ export function stageChances(att: Unit, def: Unit, a: AbilityDef, distance: numb
 }
 
 /** Probability (percent) that an attack-check ability lands. */
-export function landChance(c: StageChances): number {
-  return idiv(c.aim * (100 - c.dodge) * (100 - c.parry) * (100 - c.block), 1_000_000);
+/**
+ * True-hit table: TRUE_HIT[p] = chance (percent x 100) that the average of two
+ * d100 rolls (0-99) is below p. 75 -> ~8800, 50 -> ~4950, 25 -> ~1250.
+ */
+const TRUE_HIT: number[] = (() => {
+  const out: number[] = [];
+  for (let p = 0; p <= 100; p++) {
+    let n = 0;
+    for (let a = 0; a < 100; a++) n += Math.max(0, Math.min(100, 2 * p - a));
+    out.push(n);
+  }
+  return out;
+})();
+
+/** The real probability (percent) behind a displayed chance under the given roll mode. */
+export function realChance(pct: number, trueHit: boolean): number {
+  const p = clamp(pct, 0, 100);
+  return trueHit ? idiv(TRUE_HIT[p]!, 100) : p;
+}
+
+/** Probability (percent) that an attack-check ability lands. */
+export function landChance(c: StageChances, trueHit = false): number {
+  const r = (p: number) => realChance(p, trueHit);
+  return idiv(r(c.aim) * (100 - r(c.dodge)) * (100 - r(c.parry)) * (100 - r(c.block)), 1_000_000);
 }
 
 export function critChance(att: Unit, def: Unit): number {
@@ -154,9 +176,21 @@ function resolveOn(s: BattleState, u: Unit, a: AbilityDef, v: Unit, counter: boo
   // Rolls come from the attacker's stream. With per-unit streams every attack
   // draws the same number of rolls, so one outcome doesn't shift later luck.
   const rng = rngFor(s, u);
-  const draws = s.rules.unitStreams ? [rng.int(100), rng.int(100), rng.int(100), rng.int(100), rng.int(100), rng.int(100)] : null;
+  // Fixed layout when streams are on: aim 0-1, dodge 2-3, parry 4-5, block 6-7, crit 8, spread 9.
+  const draws = s.rules.unitStreams ? Array.from({ length: 10 }, () => rng.int(100)) : null;
   let k = 0;
-  const roll = (pct: number) => (draws ? draws[k++]! < pct : rng.chance(pct));
+  const d100 = () => (draws ? draws[k++]! : rng.int(100));
+  const roll = (pct: number): boolean => {
+    // True hit: the average of two d100s must be under the chance.
+    if (s.rules.trueHit) return d100() + d100() < 2 * pct;
+    const hit = d100() < pct;
+    if (draws) k++; // keep the fixed slot layout
+    return hit;
+  };
+  const critRoll = (pct: number): boolean => {
+    if (draws) k = 8;
+    return d100() < pct;
+  };
 
   if (a.check === "attack" && hostile) {
     const c = stageChances(u, v, a, distance);
@@ -170,7 +204,7 @@ function resolveOn(s: BattleState, u: Unit, a: AbilityDef, v: Unit, counter: boo
       if (!counter) firePassives(s, v, "onBeingAttacked", u, reactCtx);
       return;
     }
-    crit = roll(critChance(u, v));
+    crit = critRoll(critChance(u, v));
   }
 
   // Armour stage: every damage effect is a packet resolved per component.
@@ -178,7 +212,7 @@ function resolveOn(s: BattleState, u: Unit, a: AbilityDef, v: Unit, counter: boo
   let total = 0;
   if (damageEffects.length > 0) {
     const sp = s.rules.damageSpread;
-    const spread = sp > 0 ? 100 - sp + (draws ? draws[5]! % (2 * sp + 1) : rng.int(2 * sp + 1)) : 100;
+    const spread = sp > 0 ? 100 - sp + (draws ? draws[9]! % (2 * sp + 1) : rng.int(2 * sp + 1)) : 100;
     const components: ComponentResult[] = [];
     let interaction: string | undefined;
     for (const e of damageEffects) {

@@ -1,0 +1,135 @@
+/**
+ * Robustness report: is the outcome decided by *what* you bring, not by exactly
+ * where you dropped it or by the dice?
+ *   npm run robustness -- [--placements 10] [--seeds 10] [--presets a,b]
+ *
+ * For each scenario it samples random player placements inside the deploy zone,
+ * and several seeds per placement:
+ *  - win%    overall player win rate.
+ *  - placeSD standard deviation of per-placement win rates. How much exact
+ *            placement matters. Lower is better.
+ *  - coin%   average of 4p(1-p) over placements: 0 when each placement has a
+ *            fixed result, 100 when every placement is a coin flip on the seed.
+ *            How much the dice matter. Lower is better.
+ * Mirror fixtures (m2, m3, m5: identical squads on both sides of an open,
+ * symmetric map, enemy advancing) also report win% with the enemy at +15% and
+ * +30% power: parity should go to the player, a clearly stronger enemy shouldn't.
+ */
+import { content } from "../content/index.js";
+import { DEFAULT_RULES, Rng, runBattle, type Content, type Pos, type Rules, type ScenarioDef } from "../sim/index.js";
+
+export const PRESETS: Record<string, Partial<Rules>> = {
+  current: DEFAULT_RULES,
+  trueHit: { trueHit: true },
+  formation: { formation: true },
+  hold: { playerHold: 3 },
+  "formation+hold": { formation: true, playerHold: 3 },
+  "all3": { trueHit: true, formation: true, playerHold: 3 },
+};
+
+const MIRROR_MAP = [
+  "............",
+  "............",
+  "....#..#....",
+  "............",
+  "............",
+  "....#..#....",
+  "............",
+  "............",
+];
+
+function mirror(id: string, team: string[]): ScenarioDef {
+  const ys = team.map((_, i) => 2 + i);
+  return {
+    id,
+    name: id,
+    description: "mirror fixture",
+    scouting: "",
+    map: MIRROR_MAP,
+    deployZone: { x0: 0, y0: 0, x1: 2, y1: 7 },
+    units: [
+      ...team.map((unitId, i) => ({ unitId, side: "player" as const, pos: { x: 1, y: ys[i]! } })),
+      ...team.map((unitId, i) => ({ unitId, side: "enemy" as const, pos: { x: 10, y: ys[i]! } })),
+    ],
+    doctrine: { kind: "advance" },
+  };
+}
+
+const MIRRORS = {
+  m2: mirror("m2", ["aldric", "vex"]),
+  m3: mirror("m3", ["aldric", "wren", "oswin"]),
+  m5: mirror("m5", ["aldric", "kesh", "wren", "sela", "oswin"]),
+};
+const world: Content = { ...content, scenarios: { ...content.scenarios, ...MIRRORS } };
+
+const args = process.argv.slice(2);
+const flag = (name: string, dflt: string) => {
+  const i = args.indexOf(`--${name}`);
+  return i >= 0 ? args[i + 1]! : dflt;
+};
+const P = Number(flag("placements", "10"));
+const S = Number(flag("seeds", "10"));
+const presets = flag("presets", Object.keys(PRESETS).join(",")).split(",");
+const real = ["skirmish", "patrol", "foundry", "marsh", "wolves"];
+
+/** A random legal placement of the player's units inside the deploy zone. */
+function randomPlacement(sc: ScenarioDef, k: number): Record<number, Pos> {
+  const rng = new Rng(k * 7919 + 13);
+  const z = sc.deployZone;
+  const free: Pos[] = [];
+  for (let y = z.y0; y <= z.y1; y++) {
+    for (let x = z.x0; x <= z.x1; x++) {
+      if (sc.map[y]?.[x] === "#" || sc.units.some((u) => u.side === "enemy" && u.pos.x === x && u.pos.y === y)) continue;
+      free.push({ x, y });
+    }
+  }
+  const out: Record<number, Pos> = {};
+  sc.units.forEach((u, i) => {
+    if (u.side !== "player") return;
+    out[i] = free.splice(rng.int(free.length), 1)[0]!;
+  });
+  return out;
+}
+
+function measure(id: string, rules: Partial<Rules>, enemyPower = 0) {
+  const sc = world.scenarios[id]!;
+  const perPlacement: number[] = [];
+  for (let k = 0; k < P; k++) {
+    const placements = randomPlacement(sc, k);
+    let w = 0;
+    for (let seed = 1; seed <= S; seed++) if (runBattle(world, id, seed, { rules, placements, enemyPower }).winner === "player") w++;
+    perPlacement.push(w / S);
+  }
+  const mean = perPlacement.reduce((a, b) => a + b, 0) / P;
+  const sd = Math.sqrt(perPlacement.reduce((a, p) => a + (p - mean) ** 2, 0) / P);
+  const coin = perPlacement.reduce((a, p) => a + 4 * p * (1 - p), 0) / P;
+  return { win: 100 * mean, sd: 100 * sd, coin: 100 * coin };
+}
+
+const f = (v: number) => v.toFixed(0).padStart(4);
+console.log(`placements ${P} x seeds ${S}.  cells: win% / placeSD / coin%   (mirrors: win% at enemy +0 / +15 / +30)`);
+for (const name of presets) {
+  const rules = PRESETS[name];
+  if (!rules) throw new Error(`unknown preset ${name}`);
+  const t0 = performance.now();
+  const cells: string[] = [];
+  let sdSum = 0;
+  let coinSum = 0;
+  for (const id of real) {
+    const m = measure(id, rules);
+    sdSum += m.sd;
+    coinSum += m.coin;
+    cells.push(`${id} ${f(m.win)}/${f(m.sd)}/${f(m.coin)}`);
+  }
+  for (const id of Object.keys(MIRRORS)) {
+    const m0 = measure(id, rules);
+    sdSum += m0.sd;
+    coinSum += m0.coin;
+    const m15 = measure(id, rules, 15);
+    const m30 = measure(id, rules, 30);
+    cells.push(`${id} ${f(m0.win)}/${f(m0.sd)}/${f(m0.coin)} [${f(m15.win)}${f(m30.win)}]`);
+  }
+  const n = real.length + Object.keys(MIRRORS).length;
+  console.log(`\n${name}: mean placeSD ${(sdSum / n).toFixed(1)}  mean coin% ${(coinSum / n).toFixed(1)}  (${((performance.now() - t0) / 1000).toFixed(0)}s)`);
+  for (const c of cells) console.log(`  ${c}`);
+}

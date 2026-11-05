@@ -21,16 +21,38 @@ export interface Rules {
   charge: boolean;
   /** Outnumbered units take this percent less damage per unit of deficit (max 3 steps). */
   underdog: number;
+  /**
+   * Fire Emblem-style "true hit": stage rolls average two d100s, so high chances
+   * land more often than shown and low chances less (75% -> ~88%, 25% -> ~12%).
+   * Crits stay a single roll.
+   */
+  trueHit: boolean;
+  /**
+   * The player's squad arranges itself by role at battle start, centred on where
+   * the player put it: melee in front, support in the middle, ranged behind.
+   * Coarse placement (which ground) matters; exact tiles don't.
+   */
+  formation: boolean;
+  /**
+   * The player's squad holds its ground until an enemy comes within this many
+   * tiles (or someone is hurt), letting the enemy walk in. 0 = off. Ignored
+   * when the enemy doctrine is itself an ambush (hold).
+   */
+  playerHold: number;
 }
 
-export const BASELINE_RULES: Rules = { unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0 };
+export const BASELINE_RULES: Rules = {
+  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, trueHit: false, formation: false, playerHold: 0,
+};
 
 /**
  * The rules battles use unless told otherwise. Chosen with `npm run sensitivity`:
  * together these cut the value of a +/-30 opening head start from ~37 to ~7 win-%
  * points and made every difficulty curve monotonic (see README "Sensitivity").
  */
-export const DEFAULT_RULES: Rules = { unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10 };
+export const DEFAULT_RULES: Rules = {
+  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, trueHit: false, formation: false, playerHold: 0,
+};
 
 export interface BattleOptions {
   /** Safety valve: declare a draw after this many ticks. */

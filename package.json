@@ -11,6 +11,7 @@
     "battle": "tsx src/cli/battle.ts",
     "batch": "tsx src/cli/batch.ts",
     "sensitivity": "tsx src/cli/sensitivity.ts",
+    "robustness": "tsx src/cli/robustness.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.sim.json && tsc -p tsconfig.json"
