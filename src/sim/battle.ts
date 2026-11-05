@@ -1,10 +1,10 @@
 import { debugCandidates, decide } from "./ai.js";
 import { advance, nextActor, openingGauge, projectTurnOrder, ticksToNextEvent } from "./clock.js";
-import { basicAttack, executeAbility } from "./combat.js";
+import { basicAttack, executeAbility, inRangeFrom } from "./combat.js";
 import { firePassives, say } from "./effects.js";
 import { Grid, manhattan } from "./grid.js";
 import { Rng } from "./rng.js";
-import { emit, type BattleOptions, type BattleState } from "./state.js";
+import { DEFAULT_RULES, emit, type BattleOptions, type BattleState, type Rules } from "./state.js";
 import { updateStatuses } from "./statuses.js";
 import { maxHp, stepCostAt } from "./stats.js";
 import type { BattleLog, UnitSnapshot } from "./log.js";
@@ -69,6 +69,7 @@ export function createUnit(content: Content, unitId: string, side: Side, uid: nu
     weights,
     base,
     staticMods,
+    situationalMods: [],
     statuses: [],
     buildup: {},
     cooldowns: {},
@@ -92,16 +93,19 @@ export function createUnit(content: Content, unitId: string, side: Side, uid: nu
 export function setupBattle(content: Content, scenarioId: string, seed: number, opts: BattleOptions = {}): BattleState {
   const scenario = need(content.scenarios, scenarioId, "scenario");
   const grid = new Grid(scenario.map);
+  const rules: Rules = { ...DEFAULT_RULES, ...opts.rules };
   const benched = new Set(opts.benched ?? []);
   const units: Unit[] = [];
   scenario.units.forEach((su, i) => {
     if (benched.has(i)) return;
     const u = createUnit(content, su.unitId, su.side, units.length);
-    if (su.side === "enemy" && scenario.enemyMods) {
-      u.staticMods.push(...scenario.enemyMods);
-      u.cache.clear();
-      u.hp = maxHp(u);
+    if (su.side === "enemy" && scenario.enemyMods) u.staticMods.push(...scenario.enemyMods);
+    if (su.side === "enemy" && opts.enemyPower) {
+      u.staticMods.push({ key: "hp", op: "pct", value: opts.enemyPower }, { key: "damageDealt", op: "pct", value: opts.enemyPower });
     }
+    if (rules.hpScale !== 100) u.staticMods.push({ key: "hp", op: "pct", value: rules.hpScale - 100 });
+    u.cache.clear();
+    u.hp = maxHp(u);
     u.pos = { ...(opts.placements?.[i] ?? su.pos) };
     units.push(u);
   });
@@ -110,9 +114,12 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
   for (const u of units) {
     u.gauge = openingGauge(u);
     if (opts.gaugeJitter) u.gauge = Math.min(99, u.gauge + jitterRng.int(opts.gaugeJitter + 1));
+    if (opts.tempoOffset && u.side === "player") u.gauge = Math.min(99, u.gauge + opts.tempoOffset);
     if (u.side === "enemy" && scenario.doctrine.kind === "hold") u.intent = "hold";
   }
-  return { content, scenario, seed, grid, units, rng: new Rng(seed), t: 0, log: [], opts };
+  // Per-unit streams are seeded from (seed, uid) so a unit's luck doesn't depend on anyone else.
+  const streams = units.map((u) => new Rng(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(u.uid + 1, 0x85ebca77)));
+  return { content, scenario, seed, grid, units, rng: new Rng(seed), streams, rules, t: 0, log: [], opts };
 }
 
 export function snapshot(u: Unit): UnitSnapshot {
@@ -210,8 +217,18 @@ function takeTurn(s: BattleState, u: Unit): void {
       for (const e of leaving) firePassives(s, e, "onEnemyDisengage", u, { melee: true });
       u.gauge -= cost;
       if (!u.alive) return;
+      const wasInRange = s.rules.charge && anyTargetInRange(s, u);
       u.pos = { ...choice.to };
       emit(s, { t: s.t, kind: "move", uid: u.uid, from, to: { ...choice.to }, cost });
+      // Charge: closing into range lets the unit strike now, paying with gauge debt.
+      // This removes the penalty for being the one who steps into range first.
+      if (s.rules.charge && !wasInRange && u.alive) {
+        const strike = decide(s, u, { abilitiesOnly: true }).choice;
+        if (strike.kind === "ability") {
+          say(s, u, strike.reason === "attack" ? "advance" : strike.reason);
+          executeAbility(s, u, strike.ability, strike.target);
+        }
+      }
       return;
     }
     case "wait":
@@ -219,6 +236,10 @@ function takeTurn(s: BattleState, u: Unit): void {
       emit(s, { t: s.t, kind: "wait", uid: u.uid, cost: WAIT_COST });
       return;
   }
+}
+
+function anyTargetInRange(s: BattleState, u: Unit): boolean {
+  return u.abilities.some((a) => a.target === "enemy" && s.units.some((e) => e.alive && e.side !== u.side && inRangeFrom(s, u, a, u.pos, e)));
 }
 
 /** Opening turn order for the setup screen preview, given placements. */

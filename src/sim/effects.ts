@@ -43,10 +43,28 @@ export function heal(s: BattleState, src: Unit, target: Unit, amount: number): v
   if (target.hp * 4 > max) target.hpFlags.below25 = false;
 }
 
+/**
+ * Underdog rule: a side that has lost more units than its opponent takes
+ * less damage (per unit of difference, max 3), damping snowballs.
+ */
+export function updateUnderdog(s: BattleState): void {
+  const pct = s.rules.underdog;
+  if (!pct) return;
+  const lost = { player: 0, enemy: 0 };
+  for (const u of s.units) if (!u.alive) lost[u.side]++;
+  for (const u of s.units) {
+    if (!u.alive) continue;
+    const deficit = Math.min(3, Math.max(0, lost[u.side] - lost[u.side === "player" ? "enemy" : "player"]));
+    u.situationalMods = deficit > 0 ? [{ key: "damageTaken", op: "pct", value: -pct * deficit }] : [];
+    u.cache.clear();
+  }
+}
+
 function knockout(s: BattleState, u: Unit, by: number): void {
   u.alive = false;
   u.statuses = [];
   emit(s, { t: s.t, kind: "knockout", uid: u.uid, by });
+  updateUnderdog(s);
   for (const ally of s.units) {
     if (ally.alive && ally.side === u.side && manhattan(ally.pos, u.pos) <= 2) {
       firePassives(s, ally, "onAllyKnockedOut", u);

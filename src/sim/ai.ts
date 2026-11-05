@@ -56,7 +56,7 @@ export function effectiveWeights(u: Unit, t = 0, doctrine?: Doctrine): Weights {
   return w;
 }
 
-export function decide(s: BattleState, me: Unit): { choice: Choice; candidates: Choice[] } {
+export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean } = {}): { choice: Choice; candidates: Choice[] } {
   const ctx: Ctx = {
     s,
     me,
@@ -105,6 +105,13 @@ export function decide(s: BattleState, me: Unit): { choice: Choice; candidates: 
         parts: { ...v.parts, perTick, danger: -dangerPenalty(dangerHere) },
       });
     }
+  }
+
+  if (opts.abilitiesOnly) {
+    // A follow-up action (charge): only act, never move or wait.
+    let best: Choice = { kind: "wait", reason: "hold", score: 0, label: "hold", parts: {} };
+    for (const c of cands) if (c.score > best.score) best = c;
+    return { choice: best, candidates: cands };
   }
 
   // 2. Move toward a handful of tactical spots, one step at a time (re-evaluating each step).

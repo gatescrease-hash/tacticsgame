@@ -2,7 +2,7 @@ import { computePacket, powerOf } from "./damage.js";
 import { afterDamage, firePassives, heal, loseHp } from "./effects.js";
 import { hasLineOfSight, manhattan } from "./grid.js";
 import { clamp, idiv } from "./math.js";
-import { emit, unitAt, type BattleState } from "./state.js";
+import { emit, rngFor, unitAt, type BattleState } from "./state.js";
 import { addBuildup, applyStatus, isFrozen } from "./statuses.js";
 import { hasStatus, stat } from "./stats.js";
 import type { AttackOutcome, ComponentResult } from "./log.js";
@@ -151,29 +151,38 @@ function resolveOn(s: BattleState, u: Unit, a: AbilityDef, v: Unit, counter: boo
   const reactCtx = { melee: distance <= 1, suppressed: a.tags.includes("suppress") };
   let crit = false;
 
+  // Rolls come from the attacker's stream. With per-unit streams every attack
+  // draws the same number of rolls, so one outcome doesn't shift later luck.
+  const rng = rngFor(s, u);
+  const draws = s.rules.unitStreams ? [rng.int(100), rng.int(100), rng.int(100), rng.int(100), rng.int(100), rng.int(100)] : null;
+  let k = 0;
+  const roll = (pct: number) => (draws ? draws[k++]! < pct : rng.chance(pct));
+
   if (a.check === "attack" && hostile) {
     const c = stageChances(u, v, a, distance);
     let outcome: AttackOutcome | null = null;
-    if (!s.rng.chance(c.aim)) outcome = "missed";
-    else if (s.rng.chance(c.dodge)) outcome = "dodged";
-    else if (s.rng.chance(c.parry)) outcome = "parried";
-    else if (s.rng.chance(c.block)) outcome = "blocked";
+    if (!roll(c.aim)) outcome = "missed";
+    else if (roll(c.dodge)) outcome = "dodged";
+    else if (roll(c.parry)) outcome = "parried";
+    else if (roll(c.block)) outcome = "blocked";
     if (outcome) {
       emit(s, { t: s.t, kind: "hit", uid: u.uid, target: v.uid, ability: a.id, outcome, crit: false, components: [], damage: 0, hpAfter: v.hp });
       if (!counter) firePassives(s, v, "onBeingAttacked", u, reactCtx);
       return;
     }
-    crit = s.rng.chance(critChance(u, v));
+    crit = roll(critChance(u, v));
   }
 
   // Armour stage: every damage effect is a packet resolved per component.
   const damageEffects = a.effects.filter((e) => e.kind === "damage");
   let total = 0;
   if (damageEffects.length > 0) {
+    const sp = s.rules.damageSpread;
+    const spread = sp > 0 ? 100 - sp + (draws ? draws[5]! % (2 * sp + 1) : rng.int(2 * sp + 1)) : 100;
     const components: ComponentResult[] = [];
     let interaction: string | undefined;
     for (const e of damageEffects) {
-      const r = computePacket(u, v, e.packet, e.power, crit);
+      const r = computePacket(u, v, e.packet, e.power, crit, spread);
       total += r.total;
       components.push(...r.components);
       interaction ??= r.interaction;

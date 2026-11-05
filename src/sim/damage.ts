@@ -99,10 +99,15 @@ export interface PacketResult {
   interaction?: string;
 }
 
-/** Crits find a gap: x1.5 power and half the target's mitigation. */
-export function computePacket(att: Unit, def: Unit, packet: PacketComponent[], power: Power, crit: boolean): PacketResult {
+/**
+ * Crits find a gap: x1.5 power and half the target's mitigation.
+ * `spread` is a percent roll (100 = none) from rules.damageSpread; the
+ * attacker's damageDealt and defender's damageTaken multiply the result.
+ */
+export function computePacket(att: Unit, def: Unit, packet: PacketComponent[], power: Power, crit: boolean, spread = 100): PacketResult {
   let pw = powerOf(att, power);
   if (crit) pw = idiv(pw * 3, 2);
+  const mult = idiv(stat(att, "damageDealt") * stat(def, "damageTaken") * spread, 10_000);
   const components: ComponentResult[] = [];
   let total = 0;
   let interaction: string | undefined;
@@ -113,7 +118,8 @@ export function computePacket(att: Unit, def: Unit, packet: PacketComponent[], p
     const m = idiv(mit * c.share, 100);
     const tr = tierFor(c.type, c.element, def);
     if (tr.interaction) interaction = tr.interaction;
-    const damage = idiv(Math.max(0, p - m) * tr.tier, 2);
+    // Two-step rounding keeps (power - mitigation) x tier exact at mult 100.
+    const damage = idiv(idiv(Math.max(0, p - m) * tr.tier, 2) * mult, 100);
     total += damage;
     components.push(c.element ? { type: c.type, element: c.element, tier: tr.tier, damage } : { type: c.type, tier: tr.tier, damage });
   }

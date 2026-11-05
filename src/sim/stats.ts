@@ -35,6 +35,9 @@ function baseValue(u: Unit, key: ModKey): number {
       const penalty = Math.max(0, u.cls.armour.weight - idiv(stat(u, "strength"), 4));
       return soft - penalty;
     }
+    case "damageDealt":
+    case "damageTaken":
+      return 100;
     default:
       return u.base[key];
   }
@@ -55,6 +58,7 @@ function minimum(key: ModKey): number {
 
 function* modifiersOf(u: Unit): Generator<Modifier> {
   yield* u.staticMods;
+  yield* u.situationalMods;
   for (const s of u.statuses) if (s.def.mods) yield* s.def.mods;
 }
 

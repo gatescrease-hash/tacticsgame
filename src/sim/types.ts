@@ -33,8 +33,11 @@ export const STAT_NAMES: readonly StatName[] = [
 ];
 
 /** Derived values: calculated from stats, class, race and armour, never rolled. */
-export type DerivedKey = "hit" | "dodge" | "parry" | "block" | "crit" | "armour" | "moveCost" | "fillRate";
-export const DERIVED_KEYS: readonly DerivedKey[] = ["hit", "dodge", "parry", "block", "crit", "armour", "moveCost", "fillRate"];
+/** damageDealt / damageTaken are percent multipliers on final damage (base 100). */
+export type DerivedKey = "hit" | "dodge" | "parry" | "block" | "crit" | "armour" | "moveCost" | "fillRate" | "damageDealt" | "damageTaken";
+export const DERIVED_KEYS: readonly DerivedKey[] = [
+  "hit", "dodge", "parry", "block", "crit", "armour", "moveCost", "fillRate", "damageDealt", "damageTaken",
+];
 
 export type ModKey = StatName | DerivedKey;
 
@@ -358,6 +361,8 @@ export interface Unit {
   base: Stats;
   /** Class, gear and passive modifiers. Statuses add theirs on top. */
   staticMods: Modifier[];
+  /** Modifiers from the battle situation (e.g. underdog), recomputed as it changes. */
+  situationalMods: Modifier[];
   statuses: ActiveStatus[];
   buildup: Record<string, number>;
   /** Ability id -> tick when it's ready again. */
