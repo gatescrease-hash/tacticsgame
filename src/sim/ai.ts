@@ -1,10 +1,11 @@
 import { THRESHOLD } from "./clock.js";
-import { affected, basicAttack, inRangeFrom, type LuckRules, isReady, landChance, stageChances } from "./combat.js";
+import { affected, basicAttack, elevationPct, inRangeFrom, isRangedAbility, type LuckRules, isReady, landChance, stageChances } from "./combat.js";
 import { computePacket, powerOf } from "./damage.js";
 import { firstStep, manhattan, pathCosts } from "./grid.js";
 import { idiv } from "./math.js";
 import { alliesOf, enemiesOf, type BattleState } from "./state.js";
-import { hasStatus, hasStatusTag, maxHp, stat, stepCost } from "./stats.js";
+import { hasStatus, hasStatusTag, maxHp, stat } from "./stats.js";
+import { canLeap, edgeCost, jumpOf } from "./movement.js";
 import type { CandidateDebug } from "./log.js";
 import type { AbilityDef, Doctrine, Pos, Reason, Unit, Weights } from "./types.js";
 
@@ -38,7 +39,7 @@ interface Ctx {
   enemies: Unit[];
   allies: Unit[];
   dangerCache: Map<number, number>;
-  threats: { e: Unit; exp: number; reach: number }[];
+  threats: { e: Unit; exp: number; reach: number; melee: boolean; climb: number }[];
   /** Squad focus-fire target (rules.focusFire, player side). */
   focus: Unit | null;
 }
@@ -103,15 +104,17 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     const moveTiles = idiv(THRESHOLD, Math.max(1, stat(e, "moveCost"))) + 1;
     let exp = 0;
     let range = 1;
+    let melee = true;
     for (const a of e.abilities) {
       if (a.target !== "enemy" || !isReady(s, e, a)) continue;
       exp = Math.max(exp, expected(e, me, a, a.range.max, s.rules).exp);
       range = Math.max(range, a.range.max);
+      if (isRangedAbility(a)) melee = false;
     }
     // An enemy spreads its attention: split its threat across everyone on my side it could reach.
     const reach = moveTiles + range;
     const options = Math.max(1, ctx.allies.filter((a) => manhattan(a.pos, e.pos) <= reach).length);
-    ctx.threats.push({ e, exp: idiv(exp * 2, options + 1), reach });
+    ctx.threats.push({ e, exp: idiv(exp * 2, options + 1), reach, melee, climb: jumpOf(e) });
   }
 
   const cands: Choice[] = [];
@@ -152,9 +155,10 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
   const { cost, prev, order } = pathCosts(
     s.grid,
     me.pos,
-    (_p, tile) => stepCost(me, tile),
+    (from, to) => edgeCost(me, s.grid, from, to),
     (p) => occupied[p.y * s.grid.width + p.x] === 0,
     THRESHOLD * 5,
+    canLeap(me),
   );
   // Reachable tiles, cheapest first (Dijkstra order), so spot searches can stop at the first hit.
   const reachable = order.slice(1);
@@ -265,9 +269,9 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
   };
 
   // One step at a time: each free neighbour, scored by its position value.
-  for (const step of s.grid.neighbours(me.pos)) {
+  for (const step of stepOptions(s, me)) {
     const i = s.grid.index(step);
-    if (cost[i]! <= 0) continue;
+    if (cost[i]! <= 0 || prev[i] !== hereIdx) continue;
     const pv = positionValue(i);
     const d = danger(ctx, step);
     const coh = cohesionCost(step);
@@ -323,6 +327,19 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
   return { choice, candidates: cands };
 }
 
+/** Tiles one move away: the 4 neighbours, plus 2-tile leaps over pits for jumpers. */
+function stepOptions(s: BattleState, me: Unit): Pos[] {
+  const out = s.grid.neighbours(me.pos);
+  if (canLeap(me)) {
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
+      const mid = { x: me.pos.x + dx, y: me.pos.y + dy };
+      const to = { x: me.pos.x + 2 * dx, y: me.pos.y + 2 * dy };
+      if (s.grid.inBounds(to) && s.grid.tile(mid).pit) out.push(to);
+    }
+  }
+  return out;
+}
+
 export function debugCandidates(cands: Choice[], n = 5): CandidateDebug[] {
   const r = (v: number) => Math.round(v * 10) / 10;
   return [...cands]
@@ -357,7 +374,13 @@ function danger(ctx: Ctx, p: Pos): number {
   const cached = ctx.dangerCache.get(key);
   if (cached !== undefined) return cached;
   let sum = 0;
-  for (const t of ctx.threats) if (manhattan(t.e.pos, p) <= t.reach) sum += t.exp;
+  const h = ctx.s.grid.heightAt(p);
+  for (const t of ctx.threats) {
+    if (manhattan(t.e.pos, p) > t.reach) continue;
+    // A melee enemy below a cliff it can't climb is much less of a threat (it must walk around).
+    const cliff = t.melee && h - ctx.s.grid.heightAt(t.e.pos) > Math.max(1, t.climb);
+    sum += cliff ? idiv(t.exp, 3) : t.exp;
+  }
   const pct = Math.min(300, idiv(sum * 100, Math.max(1, ctx.me.hp)));
   ctx.dangerCache.set(key, pct);
   return pct;
@@ -416,7 +439,10 @@ function abilityValue(ctx: Ctx, a: AbilityDef, t: Unit, from: Pos): { value: num
   let hostiles = 0;
   for (const v of victims) {
     const hostile = v.side !== me.side;
-    const ex = expected(me, v, a, manhattan(from, v.pos), ctx.s.rules);
+    const ex0 = expected(me, v, a, manhattan(from, v.pos), ctx.s.rules);
+    // High ground matters to archers and mages: value it so they seek it out.
+    const elev = elevationPct(ctx.s.grid, from, v.pos, a);
+    const ex = { exp: idiv(ex0.exp * elev, 100), raw: idiv(ex0.raw * elev, 100), land: ex0.land };
     const mhp = maxHp(v);
     if (!hostile) {
       friendly += idiv(Math.min(ex.exp, v.hp) * 100, mhp);

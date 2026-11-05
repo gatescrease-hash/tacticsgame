@@ -102,8 +102,10 @@ export interface RaceDef {
   passives: string[];
   /** Classes this body can't take. */
   lockedClasses?: string[];
-  /** Movement tags: "swampwalker" ignores swamp slowdown. */
+  /** Movement tags: "swampwalker" ignores swamp slowdown; "flyer" ignores height and pits. */
   moveTags?: string[];
+  /** Metres this body can climb (default 1). 2+ also leaps single pits. */
+  jump?: number;
 }
 
 // ---------------------------------------------------------------- classes and gear
@@ -115,6 +117,8 @@ export interface ClassDef {
   armour: { material: ArmourMaterial; value: number; weight: number };
   /** Gauge cost per tile moved. */
   moveCost: number;
+  /** Metres this class can climb (default 1). 2+ also leaps single pits: skirmishers, beasts. */
+  jump?: number;
   /** Flat bonus (or penalty) for being in the class. */
   baseBonus: Partial<Stats>;
   weaponTypes: string[];
@@ -307,8 +311,15 @@ export interface ScenarioDef {
    * ASCII map, one string per row.
    *   .  floor     #  wall (blocks movement and sight)
    *   ~  swamp (x2 move cost)     "  thicket (x1.5 move cost, blocks sight)
+   *   O  bottomless pit (no footing, doesn't block sight)
    */
   map: string[];
+  /**
+   * Optional ground height per tile in metres (digits), same shape as `map`.
+   * 1 m steps are climbable; 2 m needs a jumper; melee only connects across 1 m
+   * (spears 2 m); ranged gets high-ground bonuses.
+   */
+  heights?: string[];
   /** Where the player may place units (inclusive rectangle). */
   deployZone: { x0: number; y0: number; x1: number; y1: number };
   units: ScenarioUnit[];

@@ -43,6 +43,9 @@ interface TileLook {
   color: number;
 }
 
+/** World units per metre of elevation (a tile is 1 world unit wide). */
+const METRE = 0.5;
+
 const TILE_LOOK: Record<string, TileLook> = {
   ".": { height: 0.3, color: 0x9bb07a },
   "#": { height: 0.8, color: 0x8a8378 },
@@ -241,12 +244,16 @@ export class Battle3D {
   private labelCache = new Map<string, HTMLDivElement>();
   private tmp = new THREE.Vector3();
 
+  private metres: number[][];
+
   constructor(
     private host: HTMLElement,
     private map: string[],
     snapshots: UnitSnapshot[],
     private theme: Theme,
+    heights?: string[],
   ) {
+    this.metres = map.map((row, y) => [...row].map((_, x) => Number(heights?.[y]?.[x] ?? 0)));
     this.width = map[0]!.length;
     this.height = map.length;
     this.camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
@@ -291,9 +298,16 @@ export class Battle3D {
     return new THREE.Vector3(x - this.width / 2 + 0.5, 0, y - this.height / 2 + 0.5);
   }
 
+  /** Ground surface height (world units) of one tile. */
+  private tileTop(x: number, y: number): number {
+    const ch = this.map[y]?.[x] ?? ".";
+    const base = ch === "~" ? 0.2 : ch === "O" ? 0 : (TILE_LOOK[ch] ?? TILE_LOOK["."]!).height;
+    return base + (this.metres[y]?.[x] ?? 0) * METRE;
+  }
+
+  /** Where a unit stands; mid-move it uses the higher of the two tiles (the hop arcs over steps). */
   private topAt(x: number, y: number): number {
-    const ch = this.map[Math.round(y)]?.[Math.round(x)] ?? ".";
-    return ch === "~" ? 0.2 : (TILE_LOOK[ch] ?? TILE_LOOK["."]!).height;
+    return Math.max(this.tileTop(Math.floor(x), Math.floor(y)), this.tileTop(Math.ceil(x), Math.ceil(y)));
   }
 
   private buildTerrain(): void {
@@ -303,40 +317,56 @@ export class Battle3D {
     this.scene.add(slab);
     this.map.forEach((row, y) =>
       [...row].forEach((ch, x) => {
-        const look = TILE_LOOK[ch] ?? TILE_LOOK["."]!;
-        const h = look.height + (ch === "#" ? hash(x, y) * 0.2 : hash(x, y) * 0.05);
-        const tile = new THREE.Mesh(new THREE.BoxGeometry(0.97, h, 0.97), mat(shade(look.color, (hash(x, y, 1) - 0.5) * 0.08)));
         const p = this.world(x, y);
-        tile.position.set(p.x, h / 2, p.z);
+        if (ch === "O") {
+          // Bottomless pit: a dark hole between the neighbouring columns.
+          const hole = new THREE.Mesh(new THREE.BoxGeometry(0.99, 0.02, 0.99), new THREE.MeshBasicMaterial({ color: 0x07070a }));
+          hole.position.set(p.x, 0.01, p.z);
+          this.scene.add(hole);
+          return;
+        }
+        const look = TILE_LOOK[ch] ?? TILE_LOOK["."]!;
+        const lift = (this.metres[y]?.[x] ?? 0) * METRE;
+        if (lift > 0) {
+          // Raised ground: a rock column under the tile's own surface.
+          const rock = new THREE.Mesh(new THREE.BoxGeometry(0.99, lift, 0.99), mat(shade(0x8a7a66, (hash(x, y, 8) - 0.5) * 0.08)));
+          rock.position.set(p.x, lift / 2, p.z);
+          rock.receiveShadow = true;
+          rock.castShadow = true;
+          this.scene.add(rock);
+        }
+        const h = look.height + (ch === "#" ? hash(x, y) * 0.2 : hash(x, y) * 0.05);
+        const tile = new THREE.Mesh(new THREE.BoxGeometry(0.97, h, 0.97), mat(shade(look.color, (hash(x, y, 1) - 0.5) * 0.08 + lift * 0.06)));
+        tile.position.set(p.x, lift + h / 2, p.z);
         tile.receiveShadow = true;
-        tile.castShadow = ch === "#";
+        tile.castShadow = ch === "#" || lift > 0;
         this.scene.add(tile);
         if (ch === "~") {
           const water = new THREE.Mesh(
             new THREE.BoxGeometry(0.97, 0.06, 0.97),
             new THREE.MeshStandardMaterial({ color: 0x4f8fa6, transparent: true, opacity: 0.7, roughness: 0.2, metalness: 0.1 }),
           );
-          water.position.set(p.x, 0.2, p.z);
+          water.position.set(p.x, lift + 0.2, p.z);
           water.receiveShadow = true;
           this.scene.add(water);
         }
         if (ch === '"') {
           for (let i = 0; i < 3; i++) {
             const bush = new THREE.Mesh(new THREE.ConeGeometry(0.16 + hash(x, y, i) * 0.06, 0.45 + hash(x, y, i + 5) * 0.2, 5), mat(shade(0x3f6b34, hash(x, y, i + 9) * 0.08)));
-            bush.position.set(p.x + (hash(x, y, i + 2) - 0.5) * 0.55, h + 0.22, p.z + (hash(x, y, i + 3) - 0.5) * 0.55);
+            bush.position.set(p.x + (hash(x, y, i + 2) - 0.5) * 0.55, lift + h + 0.22, p.z + (hash(x, y, i + 3) - 0.5) * 0.55);
             bush.castShadow = true;
             this.scene.add(bush);
           }
         }
         if (ch === "#" && hash(x, y, 7) > 0.6) {
           const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.16, 0), mat(0x9a9388));
-          rock.position.set(p.x + 0.15, h + 0.08, p.z - 0.1);
+          rock.position.set(p.x + 0.15, lift + h + 0.08, p.z - 0.1);
           rock.castShadow = true;
           this.scene.add(rock);
         }
         if (ch === "." && hash(x, y, 4) > 0.82) {
           const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.12, 3), mat(0x6f8f4f));
-          tuft.position.set(p.x + (hash(x, y, 5) - 0.5) * 0.6, h + 0.06, p.z + (hash(x, y, 6) - 0.5) * 0.6);
+          tuft.position.set(p.x + (hash(x, y, 5) - 0.5) * 0.6, lift + h + 0.06, p.z + (hash(x, y, 6) - 0.5) * 0.6);
           this.scene.add(tuft);
         }
       }),

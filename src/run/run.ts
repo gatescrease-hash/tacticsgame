@@ -26,7 +26,7 @@ export interface RunConfig {
 }
 
 export const DEFAULT_RUN: RunConfig = {
-  encounters: ["skirmish", "patrol", "foundry", "marsh", "wolves"],
+  encounters: ["skirmish", "patrol", "foundry", "marsh", "wolves", "cliffs"],
   startingRoster: ["aldric", "wren", "oswin", "kesh", "sela"],
   hearts: 5,
   maxHearts: 5,

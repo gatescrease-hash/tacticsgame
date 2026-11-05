@@ -7,7 +7,8 @@ import { Grid, firstStep, manhattan, pathCosts } from "./grid.js";
 import { Rng } from "./rng.js";
 import { DEFAULT_RULES, emit, type BattleOptions, type BattleState, type Rules } from "./state.js";
 import { updateStatuses } from "./statuses.js";
-import { maxHp, stepCost, stepCostAt } from "./stats.js";
+import { maxHp } from "./stats.js";
+import { canLeap, edgeCost } from "./movement.js";
 import type { BattleLog, UnitSnapshot } from "./log.js";
 import type { AbilityDef, Content, Modifier, PassiveDef, Pos, Side, Stats, TraitDef, Unit, Weights } from "./types.js";
 
@@ -105,7 +106,7 @@ export function createUnit(content: Content, unitId: string, side: Side, uid: nu
 
 export function setupBattle(content: Content, scenarioId: string, seed: number, opts: BattleOptions = {}): BattleState {
   const scenario = need(content.scenarios, scenarioId, "scenario");
-  const grid = new Grid(scenario.map);
+  const grid = new Grid(scenario.map, scenario.heights);
   const rules: Rules = { ...DEFAULT_RULES, ...opts.rules };
   const benched = new Set(opts.benched ?? []);
   // A run's roster replaces the scenario's preset player units; they start at the anchor and form up.
@@ -197,6 +198,7 @@ export function runBattle(content: Content, scenarioId: string, seed: number, op
     width: s.grid.width,
     height: s.grid.height,
     map: [...s.scenario.map],
+    ...(s.scenario.heights ? { heights: [...s.scenario.heights] } : {}),
     units: s.units.map(snapshot),
   });
 
@@ -291,7 +293,7 @@ function takeTurn(s: BattleState, u: Unit): void {
 
 function doMove(s: BattleState, u: Unit, to: Pos): void {
   const from = { ...u.pos };
-  const cost = stepCostAt(u, s.grid, to);
+  const cost = Math.max(0, edgeCost(u, s.grid, from, to));
   // Enemies adjacent before the step and not after may punish the disengage.
   const leaving = s.units.filter((e) => e.alive && e.side !== u.side && manhattan(e.pos, from) === 1 && manhattan(e.pos, to) > 1);
   for (const e of leaving) firePassives(s, e, "onEnemyDisengage", u, { melee: true });
@@ -323,7 +325,14 @@ function nextPlanStep(s: BattleState, u: Unit): Pos | null {
   if (u.committed !== null && !s.units[u.committed]?.alive) return null;
   const occupied = new Uint8Array(s.grid.width * s.grid.height);
   for (const v of s.units) if (v.alive && v !== u) occupied[s.grid.index(v.pos)] = 1;
-  const { prev, cost } = pathCosts(s.grid, u.pos, (_p, tile) => stepCost(u, tile), (p) => occupied[p.y * s.grid.width + p.x] === 0, THRESHOLD * 5);
+  const { prev, cost } = pathCosts(
+    s.grid,
+    u.pos,
+    (from, to) => edgeCost(u, s.grid, from, to),
+    (p) => occupied[p.y * s.grid.width + p.x] === 0,
+    THRESHOLD * 5,
+    canLeap(u),
+  );
   if (cost[s.grid.index(plan.dest)]! < 0) return null;
   return firstStep(s.grid, prev, u.pos, plan.dest);
 }

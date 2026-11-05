@@ -63,18 +63,63 @@ function sizeCanvas(w: number, h: number) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-function drawMap(map: string[], c: ReturnType<typeof colors>) {
+function drawMap(map: string[], c: ReturnType<typeof colors>, heights?: string[]) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const hAt = (x: number, y: number) => Number(heights?.[y]?.[x] ?? 0);
   map.forEach((row, y) =>
     [...row].forEach((ch, x) => {
+      if (ch === "O") {
+        // Bottomless pit.
+        ctx.fillStyle = "#0a0a0d";
+        ctx.fillRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2);
+        ctx.strokeStyle = "rgba(255,255,255,0.12)";
+        ctx.strokeRect(x * TILE + 6.5, y * TILE + 6.5, TILE - 13, TILE - 13);
+        return;
+      }
       ctx.fillStyle = ch === "#" ? c.wall : ch === "~" ? c.swamp : ch === '"' ? c.thicket : c.floor;
       ctx.fillRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2);
+      const h = hAt(x, y);
+      if (h > 0) {
+        // Higher ground reads lighter, with its height in metres.
+        ctx.fillStyle = `rgba(255,255,255,${Math.min(0.45, 0.14 * h)})`;
+        ctx.fillRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2);
+        ctx.fillStyle = c.text;
+        ctx.globalAlpha = 0.55;
+        ctx.font = "10px system-ui";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        ctx.fillText(`${h}m`, x * TILE + 4, y * TILE + 3);
+        ctx.globalAlpha = 1;
+      }
       if (ch === '"') {
         ctx.fillStyle = "rgba(0,0,0,0.18)";
         for (let i = 0; i < 3; i++) ctx.fillRect(x * TILE + 12 + i * 12, y * TILE + 18 + (i % 2) * 10, 4, 16);
       }
     }),
   );
+  // Sheer faces (2 m or more) get a heavy edge; 1 m steps a light one.
+  if (heights) {
+    map.forEach((row, y) =>
+      [...row].forEach((_, x) => {
+        for (const [dx, dy] of [[1, 0], [0, 1]] as const) {
+          if (x + dx >= row.length || y + dy >= map.length) continue;
+          const d = Math.abs(hAt(x, y) - hAt(x + dx, y + dy));
+          if (d === 0) continue;
+          ctx.strokeStyle = d >= 2 ? "rgba(40,30,20,0.85)" : "rgba(40,30,20,0.35)";
+          ctx.lineWidth = d >= 2 ? 4 : 2;
+          ctx.beginPath();
+          if (dx) {
+            ctx.moveTo((x + 1) * TILE, y * TILE);
+            ctx.lineTo((x + 1) * TILE, (y + 1) * TILE);
+          } else {
+            ctx.moveTo(x * TILE, (y + 1) * TILE);
+            ctx.lineTo((x + 1) * TILE, (y + 1) * TILE);
+          }
+          ctx.stroke();
+        }
+      }),
+    );
+  }
 }
 
 function drawUnitToken(x: number, y: number, label: string, side: "player" | "enemy", c: ReturnType<typeof colors>, opts: { alpha?: number; ring?: boolean; hp?: number; maxHp?: number; statuses?: string[] } = {}) {
@@ -281,7 +326,7 @@ function inZone(p: Pos): boolean {
 function drawSetup() {
   const sc = content.scenarios[setup.scenarioId]!;
   const c = colors();
-  drawMap(sc.map, c);
+  drawMap(sc.map, c, sc.heights);
   const z = sc.deployZone;
   for (let y = z.y0; y <= z.y1; y++) {
     for (let x = z.x0; x <= z.x1; x++) {
@@ -369,6 +414,7 @@ let play: {
   bubbles: Bubble[];
   lines: Line[];
   map: string[];
+  heights?: string[];
   raf: number;
 } | null = null;
 
@@ -465,11 +511,11 @@ function startPlayback(bake: BakeResponse) {
   const units = new Map<number, PUnit>(
     start.units.map((u) => [u.uid, { ...u, x: u.pos.x, y: u.pos.y, from: u.pos, to: u.pos, moveStart: 0, moveEnd: 0, alive: true, statuses: new Map() }]),
   );
-  play = { log, idx: 0, nextAt: performance.now(), paused: false, pausedAt: 0, units, current: null, floaters: [], bubbles: [], lines: [], map: start.map, raf: 0 };
+  play = { log, idx: 0, nextAt: performance.now(), paused: false, pausedAt: 0, units, current: null, floaters: [], bubbles: [], lines: [], map: start.map, ...(start.heights ? { heights: start.heights } : {}), raf: 0 };
   if (viewSel.value === "3d") {
     const c = colors();
     stage3d.hidden = false;
-    const r = new Battle3D(stage3d, start.map, start.units, { background: c.panel, player: c.player, enemy: c.enemy, text: c.text, panel: c.panel });
+    const r = new Battle3D(stage3d, start.map, start.units, { background: c.panel, player: c.player, enemy: c.enemy, text: c.text, panel: c.panel }, start.heights);
     if (r.ok) {
       r3d = r;
       canvas.hidden = true;
@@ -595,7 +641,7 @@ function updatePositions(now: number) {
 function draw(now: number) {
   const p = play!;
   const c = colors();
-  drawMap(p.map, c);
+  drawMap(p.map, c, p.heights);
   const centre = (x: number, y: number) => [x * TILE + TILE / 2, y * TILE + TILE / 2] as const;
 
   p.lines = p.lines.filter((l) => l.until > now);
@@ -751,7 +797,7 @@ function drawRunSetup() {
   const enc = currentEncounter(content, run);
   const sc = content.scenarios[enc.scenario]!;
   const c = colors();
-  drawMap(sc.map, c);
+  drawMap(sc.map, c, sc.heights);
   const z = sc.deployZone;
   for (let y = z.y0; y <= z.y1; y++) {
     for (let x = z.x0; x <= z.x1; x++) {

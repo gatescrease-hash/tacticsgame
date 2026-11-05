@@ -45,6 +45,8 @@ export type BattleEvent =
       width: number;
       height: number;
       map: string[];
+      /** Ground height per tile in metres (digits), when the map has elevation. */
+      heights?: string[];
       units: UnitSnapshot[];
     }
   /** A unit begins its turn. `queue` = projected upcoming actors (for the turn-order bar). */

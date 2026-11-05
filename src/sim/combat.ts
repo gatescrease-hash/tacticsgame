@@ -4,6 +4,7 @@ import { hasLineOfSight, manhattan } from "./grid.js";
 import { clamp, idiv } from "./math.js";
 import { emit, rngFor, unitAt, type BattleState, type Rules } from "./state.js";
 import { addBuildup, applyStatus, isFrozen } from "./statuses.js";
+import { isFlyer } from "./movement.js";
 import { hasStatus, stat } from "./stats.js";
 import type { AttackOutcome, ComponentResult } from "./log.js";
 import type { AbilityDef, Effect, Pos, Unit } from "./types.js";
@@ -32,7 +33,8 @@ export function basicAttack(u: Unit): AbilityDef {
       affects: "enemies",
       check: "attack",
       effects: [{ kind: "damage", packet: w.packet, power: { weapon: true, base: 0 } }],
-      tags: w.range.max <= 1 ? ["basic", "melee"] : ["basic", "ranged"],
+      // Bows and crossbows (minimum range 2+) shoot; everything else, spears included, is melee.
+      tags: w.range.min >= 2 ? ["basic", "ranged"] : ["basic", "melee"],
     };
     basicCache.set(u.weapon, a);
   }
@@ -44,11 +46,34 @@ export function isReady(s: BattleState, u: Unit, a: AbilityDef): boolean {
 }
 
 /** Range in tiles plus line of sight for anything beyond adjacent. */
+/** Ranged attacks and spells: no height limit, and they enjoy high ground. Everything else is melee. */
+export function isRangedAbility(a: AbilityDef): boolean {
+  return a.tags.includes("ranged") || a.tags.includes("spell");
+}
+
+/** Metres above the target that count as high ground (+1 range for ranged attacks). */
+export const HIGH_GROUND = 2;
+
+/**
+ * Range in tiles, height and line of sight. Melee only connects across a height
+ * difference of 1 m (reach weapons: their max range in metres). Ranged attacks
+ * get +1 range from 2 m above the target.
+ */
 export function inRangeFrom(s: BattleState, u: Unit, a: AbilityDef, from: Pos, target: Unit): boolean {
   if (a.target === "self") return target === u;
   const d = manhattan(from, target.pos);
-  if (d < a.range.min || d > a.range.max) return false;
+  const dh = s.grid.heightAt(from) - s.grid.heightAt(target.pos);
+  const ranged = isRangedAbility(a);
+  const maxRange = a.range.max + (ranged && dh >= HIGH_GROUND ? 1 : 0);
+  if (d < a.range.min || d > maxRange) return false;
+  if (!ranged && Math.abs(dh) > Math.max(1, a.range.max)) return false;
   return d <= 1 || hasLineOfSight(s.grid, from, target.pos);
+}
+
+/** Ranged damage from high ground: +10% per metre above the target, -10% per metre below (max 20%). */
+export function elevationPct(grid: BattleState["grid"], from: Pos, to: Pos, a: AbilityDef): number {
+  if (!isRangedAbility(a)) return 100;
+  return 100 + clamp((grid.heightAt(from) - grid.heightAt(to)) * 10, -20, 20);
 }
 
 function lineDir(from: Pos, to: Pos): Pos {
@@ -242,7 +267,7 @@ function resolveOn(s: BattleState, u: Unit, a: AbilityDef, v: Unit, counter: boo
     const components: ComponentResult[] = [];
     let interaction: string | undefined;
     for (const e of damageEffects) {
-      const r = computePacket(u, v, e.packet, e.power, crit, spread);
+      const r = computePacket(u, v, e.packet, e.power, crit, idiv(spread * elevationPct(s.grid, u.pos, v.pos, a), 100));
       total += r.total;
       components.push(...r.components);
       interaction ??= r.interaction;
@@ -326,12 +351,28 @@ export function applyEffect(s: BattleState, src: Unit, target: Unit, e: Effect, 
 function push(s: BattleState, src: Unit, target: Unit, tiles: number): void {
   const dir = lineDir(src.pos, target.pos);
   const from = { ...target.pos };
+  let fell = false;
   for (let k = 0; k < tiles; k++) {
     const next = { x: target.pos.x + dir.x, y: target.pos.y + dir.y };
-    if (!s.grid.inBounds(next) || s.grid.tile(next).blocked || unitAt(s, next)) break;
+    if (!s.grid.inBounds(next) || unitAt(s, next)) break;
+    const t = s.grid.tile(next);
+    // Knocked into a bottomless pit: gone (flyers just flutter).
+    if (t.pit && !isFlyer(target)) {
+      target.pos = next;
+      fell = true;
+      break;
+    }
+    // Can't be shoved up a step higher than 1 m.
+    if (t.blocked || s.grid.heightAt(next) - s.grid.heightAt(target.pos) > 1) break;
     target.pos = next;
   }
   if (target.pos.x !== from.x || target.pos.y !== from.y) {
     emit(s, { t: s.t, kind: "push", uid: target.uid, from, to: { ...target.pos } });
+  }
+  if (fell) {
+    const damage = target.hp;
+    loseHp(target, damage);
+    emit(s, { t: s.t, kind: "dot", uid: target.uid, status: "fall", damage, hpAfter: 0 });
+    afterDamage(s, target, src.uid);
   }
 }

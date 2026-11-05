@@ -97,6 +97,13 @@ export function validateContent(c: Content): string[] {
       if (row.length !== w) err(where, `map row ${y} has length ${row.length}, expected ${w}`);
       for (const ch of row) if (!TILE_KINDS[ch]) err(where, `unknown map tile '${ch}' in row ${y}`);
     });
+    if (sc.heights) {
+      if (sc.heights.length !== sc.map.length) err(where, `heights has ${sc.heights.length} rows, map has ${sc.map.length}`);
+      sc.heights.forEach((row, y) => {
+        if (row.length !== w) err(where, `heights row ${y} has length ${row.length}, expected ${w}`);
+        if (!/^[0-9]*$/.test(row)) err(where, `heights row ${y} must be digits (metres)`);
+      });
+    }
     const seen = new Set<string>();
     for (const su of sc.units) {
       if (!c.units[su.unitId]) err(where, `unknown unit '${su.unitId}'`);
