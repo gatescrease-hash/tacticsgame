@@ -154,6 +154,12 @@ Findings so far:
   *non-monotonic* in enemy strength. The knife edge is deterministic chaos in the battle dynamics:
   every AI choice is an argmax, units re-decide every tile, kills compound. Dice smoothing alone
   can't fix it; tripling HP narrows the band only somewhat.
+- AI commitment (`commitTarget`, multi-step move plans `stride`, squad `cohesion`) did not reduce
+  the chaos; cohesion as implemented hurts (it drags archers and healers around). Diagnosis from a
+  deterministic 2v2 mirror: equal units trade to within 1 HP (0/33 vs 1/33), so an even fight is a
+  true tie that rounding or turn order breaks, and the first duel's winner snowballs. Ripostes make
+  exchanges explosive, and the player-first initiative tie-break makes the player step into range
+  first and eat the counter (a bias *against* the player at parity).
 - Hold and focus fire shift the tipping point strongly for some compositions (3v3 with archer and
   healer: +30% enemy power to tip) but not others (melee 2v2, 5v5).
 
