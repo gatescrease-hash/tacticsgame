@@ -85,6 +85,7 @@ export function createUnit(content: Content, unitId: string, side: Side, uid: nu
     intent: "engage",
     lastReason: null,
     idle: 0,
+    meters: {},
     cache: new Map(),
   };
   const abilities: AbilityDef[] = [basicAttack(u), ...cls.abilities.map((id) => need(content.abilities, id, "ability"))];
@@ -141,6 +142,11 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
   }
   // Per-unit streams are seeded from (seed, uid) so a unit's luck doesn't depend on anyone else.
   const streams = units.map((u) => new Rng(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(u.uid + 1, 0x85ebca77)));
+  if (rules.luck === "meter") {
+    // The seed only decides where each unit's luck meters start.
+    const meterRng = new Rng((seed * 2654435761) ^ 0x5bd1e995);
+    for (const u of units) for (const key of ["aim", "dodge", "parry", "block", "crit"]) u.meters[key] = meterRng.int(100);
+  }
   return { content, scenario, seed, grid, units, rng: new Rng(seed), streams, rules, t: 0, log: [], opts };
 }
 

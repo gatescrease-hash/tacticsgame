@@ -377,6 +377,8 @@ export interface Unit {
   /** Set by the commander layer each turn. */
   intent: "engage" | "hold";
   lastReason: Reason | null;
+  /** Bounded-luck meters per roll stage (rules.luck = "meter"). */
+  meters: Record<string, number>;
   /** Consecutive turns spent holding. Impatience: waiting erodes caution so standoffs break. */
   idle: number;
   /** Modifier-stack cache, cleared whenever statuses change. */

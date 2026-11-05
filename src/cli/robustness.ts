@@ -18,13 +18,17 @@
 import { content } from "../content/index.js";
 import { DEFAULT_RULES, Rng, runBattle, type Content, type Pos, type Rules, type ScenarioDef } from "../sim/index.js";
 
+const F = { formation: true };
 export const PRESETS: Record<string, Partial<Rules>> = {
   current: DEFAULT_RULES,
-  trueHit: { trueHit: true },
-  formation: { formation: true },
-  hold: { playerHold: 3 },
-  "formation+hold": { formation: true, playerHold: 3 },
-  "all3": { trueHit: true, formation: true, playerHold: 3 },
+  formation: F,
+  "f+dice2": { ...F, hitDice: 2 },
+  "f+dice3": { ...F, hitDice: 3 },
+  "f+meter": { ...F, luck: "meter" },
+  "f+focus": { ...F, focusFire: true },
+  "f+meter+focus": { ...F, luck: "meter", focusFire: true },
+  "f+meter+focus-spread": { ...F, luck: "meter", focusFire: true, damageSpread: 0 },
+  "f+meter+focus+hold-charge": { ...F, luck: "meter", focusFire: true, playerHold: 3, charge: false },
 };
 
 const MIRROR_MAP = [

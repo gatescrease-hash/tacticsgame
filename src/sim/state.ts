@@ -22,11 +22,18 @@ export interface Rules {
   /** Outnumbered units take this percent less damage per unit of deficit (max 3 steps). */
   underdog: number;
   /**
-   * Fire Emblem-style "true hit": stage rolls average two d100s, so high chances
-   * land more often than shown and low chances less (75% -> ~88%, 25% -> ~12%).
-   * Crits stay a single roll.
+   * How chance rolls work.
+   *  - "dice": each stage roll averages `hitDice` d100s. 1 = honest odds; 2 =
+   *    Fire Emblem "true hit" (75% shown lands ~88%, 25% ~12%); more = more decisive.
+   *  - "meter": bounded luck. Each unit keeps a meter per stage; an attempt adds
+   *    the chance and succeeds once the meter passes 100. Long-run rates are exact
+   *    and streaks can't happen; the seed only sets where each meter starts.
+   * Crits always use one die (or their own meter).
    */
-  trueHit: boolean;
+  luck: "dice" | "meter";
+  hitDice: number;
+  /** The player's squad picks one shared target and concentrates on it. */
+  focusFire: boolean;
   /**
    * The player's squad arranges itself by role at battle start, centred on where
    * the player put it: melee in front, support in the middle, ranged behind.
@@ -42,7 +49,7 @@ export interface Rules {
 }
 
 export const BASELINE_RULES: Rules = {
-  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, trueHit: false, formation: false, playerHold: 0,
+  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, focusFire: false, formation: false, playerHold: 0,
 };
 
 /**
@@ -51,7 +58,7 @@ export const BASELINE_RULES: Rules = {
  * points and made every difficulty curve monotonic (see README "Sensitivity").
  */
 export const DEFAULT_RULES: Rules = {
-  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, trueHit: false, formation: false, playerHold: 0,
+  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, luck: "dice", hitDice: 1, focusFire: false, formation: false, playerHold: 0,
 };
 
 export interface BattleOptions {

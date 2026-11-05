@@ -2,7 +2,7 @@ import { computePacket, powerOf } from "./damage.js";
 import { afterDamage, firePassives, heal, loseHp } from "./effects.js";
 import { hasLineOfSight, manhattan } from "./grid.js";
 import { clamp, idiv } from "./math.js";
-import { emit, rngFor, unitAt, type BattleState } from "./state.js";
+import { emit, rngFor, unitAt, type BattleState, type Rules } from "./state.js";
 import { addBuildup, applyStatus, isFrozen } from "./statuses.js";
 import { hasStatus, stat } from "./stats.js";
 import type { AttackOutcome, ComponentResult } from "./log.js";
@@ -105,31 +105,54 @@ export function stageChances(att: Unit, def: Unit, a: AbilityDef, distance: numb
   };
 }
 
-/** Probability (percent) that an attack-check ability lands. */
-/**
- * True-hit table: TRUE_HIT[p] = chance (percent x 100) that the average of two
- * d100 rolls (0-99) is below p. 75 -> ~8800, 50 -> ~4950, 25 -> ~1250.
- */
-const TRUE_HIT: number[] = (() => {
-  const out: number[] = [];
-  for (let p = 0; p <= 100; p++) {
-    let n = 0;
-    for (let a = 0; a < 100; a++) n += Math.max(0, Math.min(100, 2 * p - a));
-    out.push(n);
+/** Dice tables: DICE[n][p] = chance (percent x 100) that the average of n d100s (0-99) is below p. */
+const diceTables = new Map<number, number[]>();
+function diceTable(n: number): number[] {
+  let t = diceTables.get(n);
+  if (t) return t;
+  let dist = [1];
+  for (let i = 0; i < n; i++) {
+    const next = new Array<number>(dist.length + 99).fill(0);
+    dist.forEach((c, sIdx) => {
+      for (let d = 0; d < 100; d++) next[sIdx + d]! += c;
+    });
+    dist = next;
   }
-  return out;
-})();
+  const total = 100 ** n;
+  t = [];
+  for (let p = 0; p <= 100; p++) {
+    let below = 0;
+    for (let sum = 0; sum < Math.min(dist.length, n * p); sum++) below += dist[sum]!;
+    t.push(Math.round((below * 10_000) / total));
+  }
+  diceTables.set(n, t);
+  return t;
+}
 
-/** The real probability (percent) behind a displayed chance under the given roll mode. */
-export function realChance(pct: number, trueHit: boolean): number {
+export type LuckRules = Pick<Rules, "luck" | "hitDice">;
+
+/** The real long-run probability (percent) behind a displayed chance. */
+export function realChance(pct: number, luck?: LuckRules): number {
   const p = clamp(pct, 0, 100);
-  return trueHit ? idiv(TRUE_HIT[p]!, 100) : p;
+  if (!luck || luck.luck === "meter" || luck.hitDice <= 1) return p;
+  return idiv(diceTable(luck.hitDice)[p]!, 100);
 }
 
 /** Probability (percent) that an attack-check ability lands. */
-export function landChance(c: StageChances, trueHit = false): number {
-  const r = (p: number) => realChance(p, trueHit);
+export function landChance(c: StageChances, luck?: LuckRules): number {
+  const r = (p: number) => realChance(p, luck);
   return idiv(r(c.aim) * (100 - r(c.dodge)) * (100 - r(c.parry)) * (100 - r(c.block)), 1_000_000);
+}
+
+/** Bounded luck: add the chance to the unit's meter; succeed when it passes 100. */
+function meterRoll(owner: Unit, key: string, pct: number): boolean {
+  const m = (owner.meters[key] ?? 50) + clamp(pct, 0, 100);
+  if (m >= 100) {
+    owner.meters[key] = m - 100;
+    return true;
+  }
+  owner.meters[key] = m;
+  return false;
 }
 
 export function critChance(att: Unit, def: Unit): number {
@@ -176,35 +199,38 @@ function resolveOn(s: BattleState, u: Unit, a: AbilityDef, v: Unit, counter: boo
   // Rolls come from the attacker's stream. With per-unit streams every attack
   // draws the same number of rolls, so one outcome doesn't shift later luck.
   const rng = rngFor(s, u);
-  // Fixed layout when streams are on: aim 0-1, dodge 2-3, parry 4-5, block 6-7, crit 8, spread 9.
-  const draws = s.rules.unitStreams ? Array.from({ length: 10 }, () => rng.int(100)) : null;
+  const meters = s.rules.luck === "meter";
+  const n = Math.max(1, s.rules.hitDice);
+  // Fixed layout when streams are on: stage i uses slots [i*n, i*n+n), crit 4n, spread 4n+1.
+  const draws = s.rules.unitStreams && !meters ? Array.from({ length: 4 * n + 2 }, () => rng.int(100)) : null;
   let k = 0;
   const d100 = () => (draws ? draws[k++]! : rng.int(100));
-  const roll = (pct: number): boolean => {
-    // True hit: the average of two d100s must be under the chance.
-    if (s.rules.trueHit) return d100() + d100() < 2 * pct;
-    const hit = d100() < pct;
-    if (draws) k++; // keep the fixed slot layout
-    return hit;
-  };
-  const critRoll = (pct: number): boolean => {
-    if (draws) k = 8;
-    return d100() < pct;
+  const roll = (stage: number, owner: Unit, key: string, pct: number): boolean => {
+    if (meters) return meterRoll(owner, key, pct);
+    if (draws) k = stage * n;
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += d100();
+    return sum < n * pct;
   };
 
   if (a.check === "attack" && hostile) {
     const c = stageChances(u, v, a, distance);
     let outcome: AttackOutcome | null = null;
-    if (!roll(c.aim)) outcome = "missed";
-    else if (roll(c.dodge)) outcome = "dodged";
-    else if (roll(c.parry)) outcome = "parried";
-    else if (roll(c.block)) outcome = "blocked";
+    if (!roll(0, u, "aim", c.aim)) outcome = "missed";
+    else if (roll(1, v, "dodge", c.dodge)) outcome = "dodged";
+    else if (roll(2, v, "parry", c.parry)) outcome = "parried";
+    else if (roll(3, v, "block", c.block)) outcome = "blocked";
     if (outcome) {
       emit(s, { t: s.t, kind: "hit", uid: u.uid, target: v.uid, ability: a.id, outcome, crit: false, components: [], damage: 0, hpAfter: v.hp });
       if (!counter) firePassives(s, v, "onBeingAttacked", u, reactCtx);
       return;
     }
-    crit = critRoll(critChance(u, v));
+    const cc = critChance(u, v);
+    if (meters) crit = meterRoll(u, "crit", cc);
+    else {
+      if (draws) k = 4 * n;
+      crit = d100() < cc;
+    }
   }
 
   // Armour stage: every damage effect is a packet resolved per component.
@@ -212,7 +238,7 @@ function resolveOn(s: BattleState, u: Unit, a: AbilityDef, v: Unit, counter: boo
   let total = 0;
   if (damageEffects.length > 0) {
     const sp = s.rules.damageSpread;
-    const spread = sp > 0 ? 100 - sp + (draws ? draws[9]! % (2 * sp + 1) : rng.int(2 * sp + 1)) : 100;
+    const spread = sp > 0 ? 100 - sp + (draws ? draws[4 * n + 1]! % (2 * sp + 1) : rng.int(2 * sp + 1)) : 100;
     const components: ComponentResult[] = [];
     let interaction: string | undefined;
     for (const e of damageEffects) {

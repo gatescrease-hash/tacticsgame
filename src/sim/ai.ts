@@ -1,5 +1,5 @@
 import { THRESHOLD } from "./clock.js";
-import { affected, basicAttack, inRangeFrom, isReady, landChance, stageChances } from "./combat.js";
+import { affected, basicAttack, inRangeFrom, type LuckRules, isReady, landChance, stageChances } from "./combat.js";
 import { computePacket, powerOf } from "./damage.js";
 import { firstStep, manhattan, pathCosts } from "./grid.js";
 import { idiv } from "./math.js";
@@ -29,6 +29,25 @@ interface Ctx {
   allies: Unit[];
   dangerCache: Map<number, number>;
   threats: { e: Unit; exp: number; reach: number }[];
+  /** Squad focus-fire target (rules.focusFire, player side). */
+  focus: Unit | null;
+}
+
+/** The squad's shared target: the enemy nearest the squad's centre, weakest first on ties. */
+function squadFocus(allies: Unit[], enemies: Unit[]): Unit | null {
+  if (allies.length === 0) return null;
+  const cx = allies.reduce((a, u) => a + u.pos.x, 0) / allies.length;
+  const cy = allies.reduce((a, u) => a + u.pos.y, 0) / allies.length;
+  let best: Unit | null = null;
+  let bestScore = Infinity;
+  for (const e of enemies) {
+    const score = (Math.abs(e.pos.x - cx) + Math.abs(e.pos.y - cy)) * 10 + e.hp;
+    if (score < bestScore) {
+      best = e;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 const PRESSURE_START = 300;
@@ -65,7 +84,9 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     allies: alliesOf(s, me),
     dangerCache: new Map(),
     threats: [],
+    focus: null,
   };
+  if (s.rules.focusFire && me.side === "player") ctx.focus = squadFocus(ctx.allies, ctx.enemies);
   // Shared threat picture for this decision: what each enemy could do to me before my next turn.
   for (const e of ctx.enemies) {
     const moveTiles = idiv(THRESHOLD, Math.max(1, stat(e, "moveCost"))) + 1;
@@ -73,7 +94,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     let range = 1;
     for (const a of e.abilities) {
       if (a.target !== "enemy" || !isReady(s, e, a)) continue;
-      exp = Math.max(exp, expected(e, me, a, a.range.max, s.rules.trueHit).exp);
+      exp = Math.max(exp, expected(e, me, a, a.range.max, s.rules).exp);
       range = Math.max(range, a.range.max);
     }
     // An enemy spreads its attention: split its threat across everyone on my side it could reach.
@@ -219,7 +240,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
   const disengageCost = (to: Pos): number => {
     let pct = 0;
     for (const e of engagers) {
-      if (manhattan(e.pos, to) > 1) pct += idiv(expected(e, me, basicAttack(e), 1, s.rules.trueHit).exp * 100, Math.max(1, me.hp));
+      if (manhattan(e.pos, to) > 1) pct += idiv(expected(e, me, basicAttack(e), 1, s.rules).exp * 100, Math.max(1, me.hp));
     }
     return idiv(pct * Math.max(4, ctx.w.danger), 10);
   };
@@ -285,10 +306,10 @@ function tempoCost(cost: number, w: Weights): number {
   return Math.max(30, 100 + idiv((cost - 100) * w.tempo, 10));
 }
 
-export function expected(att: Unit, v: Unit, a: AbilityDef, distance: number, trueHit = false): { exp: number; raw: number; land: number } {
+export function expected(att: Unit, v: Unit, a: AbilityDef, distance: number, luck?: LuckRules): { exp: number; raw: number; land: number } {
   let raw = 0;
   for (const e of a.effects) if (e.kind === "damage") raw += computePacket(att, v, e.packet, e.power, false).total;
-  const land = a.check === "attack" && v.side !== att.side ? landChance(stageChances(att, v, a, distance), trueHit) : 100;
+  const land = a.check === "attack" && v.side !== att.side ? landChance(stageChances(att, v, a, distance), luck) : 100;
   return { exp: idiv(raw * land, 100), raw, land };
 }
 
@@ -307,7 +328,7 @@ function danger(ctx: Ctx, p: Pos): number {
 /** Doctrine target priorities (percent). */
 function targetMult(ctx: Ctx, v: Unit): number {
   const d = ctx.s.scenario.doctrine;
-  if (ctx.me.side !== "enemy") return 100;
+  if (ctx.me.side !== "enemy") return v === ctx.focus ? 200 : 100;
   if (d.kind === "hunt" && v.cls.tags.includes(d.tag)) return 220;
   if (d.kind === "pack") {
     const friends = ctx.enemies.filter((o) => o !== v && manhattan(o.pos, v.pos) <= 2).length;
@@ -351,7 +372,7 @@ function abilityValue(ctx: Ctx, a: AbilityDef, t: Unit, from: Pos): { value: num
   let hostiles = 0;
   for (const v of victims) {
     const hostile = v.side !== me.side;
-    const ex = expected(me, v, a, manhattan(from, v.pos), ctx.s.rules.trueHit);
+    const ex = expected(me, v, a, manhattan(from, v.pos), ctx.s.rules);
     const mhp = maxHp(v);
     if (!hostile) {
       friendly += idiv(Math.min(ex.exp, v.hp) * 100, mhp);
