@@ -32,6 +32,8 @@ export interface Rules {
    */
   luck: "dice" | "meter";
   hitDice: number;
+  /** With luck "meter": false starts every meter at 50, so the seed changes nothing. */
+  seededLuck: boolean;
   /** The player's squad picks one shared target and concentrates on it. */
   focusFire: boolean;
   /**
@@ -49,7 +51,7 @@ export interface Rules {
 }
 
 export const BASELINE_RULES: Rules = {
-  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, focusFire: false, formation: false, playerHold: 0,
+  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, seededLuck: true, focusFire: false, formation: false, playerHold: 0,
 };
 
 /**
@@ -58,7 +60,7 @@ export const BASELINE_RULES: Rules = {
  * points and made every difficulty curve monotonic (see README "Sensitivity").
  */
 export const DEFAULT_RULES: Rules = {
-  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, luck: "dice", hitDice: 1, focusFire: false, formation: false, playerHold: 0,
+  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, luck: "dice", hitDice: 1, seededLuck: true, focusFire: false, formation: false, playerHold: 0,
 };
 
 export interface BattleOptions {

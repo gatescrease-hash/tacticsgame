@@ -29,6 +29,8 @@ export const PRESETS: Record<string, Partial<Rules>> = {
   "f+meter+focus": { ...F, luck: "meter", focusFire: true },
   "f+meter+focus-spread": { ...F, luck: "meter", focusFire: true, damageSpread: 0 },
   "f+meter+focus+hold-charge": { ...F, luck: "meter", focusFire: true, playerHold: 3, charge: false },
+  "f+meter+focus+fixedluck": { ...F, luck: "meter", focusFire: true, seededLuck: false, damageSpread: 0 },
+  "f+meter+focus+hp300": { ...F, luck: "meter", focusFire: true, hpScale: 300 },
   "f+meter+focus+ud25": { ...F, luck: "meter", focusFire: true, underdog: 25 },
   "f+meter+focus+hold-charge+ud25": { ...F, luck: "meter", focusFire: true, playerHold: 3, charge: false, underdog: 25 },
 };

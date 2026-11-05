@@ -145,7 +145,7 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
   if (rules.luck === "meter") {
     // The seed only decides where each unit's luck meters start.
     const meterRng = new Rng((seed * 2654435761) ^ 0x5bd1e995);
-    for (const u of units) for (const key of ["aim", "dodge", "parry", "block", "crit"]) u.meters[key] = meterRng.int(100);
+    for (const u of units) for (const key of ["aim", "dodge", "parry", "block", "crit"]) u.meters[key] = rules.seededLuck ? meterRng.int(100) : 50;
   }
   return { content, scenario, seed, grid, units, rng: new Rng(seed), streams, rules, t: 0, log: [], opts };
 }
