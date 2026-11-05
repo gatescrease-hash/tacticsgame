@@ -1,10 +1,24 @@
-import type { ScenarioDef } from "../sim/types.js";
+import type { Modifier, ScenarioDef } from "../sim/types.js";
 
-/** Fixed, hand-authored test scenarios. Map generation comes much later. */
-export const scenarios = {
+/** Difficulty knob applied to every enemy: +hp%, +strength, +skill, +defense. Tuned with `npm run batch`. */
+function difficulty(hpPct: number, strength: number, skill: number, defense: number): Modifier[] {
+  return [
+    { key: "hp", op: "pct", value: hpPct },
+    { key: "strength", op: "flat", value: strength },
+    { key: "skill", op: "flat", value: skill },
+    { key: "defense", op: "flat", value: defense },
+  ];
+}
+
+/**
+ * Hand-authored test scenarios. Map generation comes much later.
+ * Tiles: . floor   # wall   ~ swamp (x2 move)   " thicket (x1.5 move, blocks sight)
+ */
+export const scenarios: Record<string, ScenarioDef> = {
   duel: {
     id: "duel",
     name: "Duel: knight vs duelist",
+    description: "One on one. Plate and patience against a fast blade.",
     map: [
       "........",
       "...#....",
@@ -12,14 +26,18 @@ export const scenarios = {
       "....#...",
       "........",
     ],
+    deployZone: { x0: 0, y0: 0, x1: 1, y1: 4 },
     units: [
       { unitId: "aldric", side: "player", pos: { x: 0, y: 2 } },
       { unitId: "vex", side: "enemy", pos: { x: 7, y: 2 } },
     ],
+    doctrine: { kind: "advance" },
+    scouting: "A lone duelist. Quick, hard to pin down, ripostes anything that swings at them.",
   },
   skirmish: {
     id: "skirmish",
-    name: "Skirmish: 2v2 across the marsh",
+    name: "Skirmish across the marsh",
+    description: "Two on two across a strip of swamp.",
     map: [
       "..........",
       "..#....#..",
@@ -28,11 +46,143 @@ export const scenarios = {
       "..#....#..",
       "..........",
     ],
+    deployZone: { x0: 0, y0: 0, x1: 2, y1: 5 },
     units: [
       { unitId: "aldric", side: "player", pos: { x: 1, y: 2 } },
       { unitId: "wren", side: "player", pos: { x: 0, y: 3 } },
       { unitId: "vex", side: "enemy", pos: { x: 8, y: 2 } },
       { unitId: "gorm", side: "enemy", pos: { x: 9, y: 3 } },
     ],
+    enemyMods: difficulty(50, 4, 5, 2),
+    doctrine: { kind: "advance" },
+    scouting: "A duelist and a lizardfolk brute. The brute wades through swamp like it isn't there.",
   },
-} satisfies Record<string, ScenarioDef>;
+  patrol: {
+    id: "patrol",
+    name: "Arago patrol",
+    description: "A kingdom patrol in textbook formation: pikes in front, crossbows behind.",
+    map: [
+      ".....##.....",
+      '..".........',
+      '..".....""..',
+      "............",
+      "......#.....",
+      "..~~........",
+      '..~~....""..',
+      "............",
+    ],
+    deployZone: { x0: 0, y0: 0, x1: 2, y1: 7 },
+    units: [
+      { unitId: "aldric", side: "player", pos: { x: 2, y: 3 } },
+      { unitId: "kesh", side: "player", pos: { x: 2, y: 4 } },
+      { unitId: "wren", side: "player", pos: { x: 0, y: 2 } },
+      { unitId: "sela", side: "player", pos: { x: 0, y: 5 } },
+      { unitId: "oswin", side: "player", pos: { x: 1, y: 4 } },
+      { unitId: "arago_spear_a", side: "enemy", pos: { x: 8, y: 3 } },
+      { unitId: "arago_spear_b", side: "enemy", pos: { x: 8, y: 4 } },
+      { unitId: "arago_sergeant", side: "enemy", pos: { x: 9, y: 4 } },
+      { unitId: "arago_knight", side: "enemy", pos: { x: 8, y: 2 } },
+      { unitId: "arago_xbow_a", side: "enemy", pos: { x: 10, y: 1 } },
+      { unitId: "arago_xbow_b", side: "enemy", pos: { x: 10, y: 6 } },
+    ],
+    enemyMods: difficulty(20, 1, 2, 0),
+    doctrine: { kind: "advance" },
+    scouting: "Six Arago soldiers. A knight and pikes up front, two crossbows behind, a sergeant who rallies them. Mostly chain and leather.",
+  },
+  foundry: {
+    id: "foundry",
+    name: "The foundry gate",
+    description: "Steam and stone. Nothing here has a mind to break.",
+    map: [
+      "....#..#....",
+      "....#..#....",
+      "............",
+      "..#......#..",
+      "..#......#..",
+      "............",
+      "....#..#....",
+      "....#..#....",
+    ],
+    deployZone: { x0: 0, y0: 0, x1: 2, y1: 7 },
+    units: [
+      { unitId: "aldric", side: "player", pos: { x: 2, y: 2 } },
+      { unitId: "gorm", side: "player", pos: { x: 2, y: 5 } },
+      { unitId: "mira", side: "player", pos: { x: 1, y: 3 } },
+      { unitId: "oswin", side: "player", pos: { x: 0, y: 4 } },
+      { unitId: "sela", side: "player", pos: { x: 1, y: 5 } },
+      { unitId: "ilya", side: "player", pos: { x: 0, y: 2 } },
+      { unitId: "golem", side: "enemy", pos: { x: 9, y: 2 } },
+      { unitId: "automaton_a", side: "enemy", pos: { x: 10, y: 4 } },
+      { unitId: "automaton_b", side: "enemy", pos: { x: 10, y: 5 } },
+      { unitId: "automaton_c", side: "enemy", pos: { x: 9, y: 6 } },
+    ],
+    enemyMods: difficulty(20, 1, 1, 0),
+    doctrine: { kind: "advance" },
+    scouting:
+      "A golem and three automatons, all plate and stone, advancing without formation. Minds won't break and fire won't bite stone. Bring something heavy, or something that conducts.",
+  },
+  marsh: {
+    id: "marsh",
+    name: "Marsh ambush",
+    description: "Quiet reeds. Too quiet.",
+    map: [
+      '....""......',
+      "...~~~~..~~.",
+      '..~~""~~~~..',
+      "...~~~~..\"..",
+      '.....~~~~"..',
+      '..""..~~~...',
+      "...~~~...~~.",
+      "............",
+    ],
+    deployZone: { x0: 0, y0: 0, x1: 2, y1: 7 },
+    units: [
+      { unitId: "aldric", side: "player", pos: { x: 1, y: 3 } },
+      { unitId: "mira", side: "player", pos: { x: 0, y: 2 } },
+      { unitId: "oswin", side: "player", pos: { x: 0, y: 4 } },
+      { unitId: "wren", side: "player", pos: { x: 0, y: 6 } },
+      { unitId: "vex", side: "player", pos: { x: 2, y: 4 } },
+      { unitId: "stalker_a", side: "enemy", pos: { x: 5, y: 2 } },
+      { unitId: "stalker_b", side: "enemy", pos: { x: 9, y: 3 } },
+      { unitId: "stalker_c", side: "enemy", pos: { x: 9, y: 4 } },
+      { unitId: "stalker_d", side: "enemy", pos: { x: 8, y: 0 } },
+      { unitId: "mudling_a", side: "enemy", pos: { x: 7, y: 5 } },
+      { unitId: "mudling_b", side: "enemy", pos: { x: 10, y: 6 } },
+    ],
+    enemyMods: difficulty(25, 3, 2, 1),
+    doctrine: { kind: "hold", radius: 3 },
+    scouting: "Tracks in the mud, then nothing. Something waits in the reeds. Blades seem to sink into whatever lives in the water.",
+  },
+  wolves: {
+    id: "wolves",
+    name: "Wolf country",
+    description: "A pack circling the camp at dusk.",
+    map: [
+      "............",
+      '..."........',
+      "........#...",
+      '..........".',
+      ".#..........",
+      '......."....',
+      "............",
+      '..."........',
+    ],
+    deployZone: { x0: 3, y0: 2, x1: 6, y1: 5 },
+    units: [
+      { unitId: "aldric", side: "player", pos: { x: 5, y: 3 } },
+      { unitId: "oswin", side: "player", pos: { x: 4, y: 4 } },
+      { unitId: "wren", side: "player", pos: { x: 4, y: 3 } },
+      { unitId: "kesh", side: "player", pos: { x: 5, y: 4 } },
+      { unitId: "sela", side: "player", pos: { x: 3, y: 3 } },
+      { unitId: "wolf_a", side: "enemy", pos: { x: 11, y: 1 } },
+      { unitId: "wolf_b", side: "enemy", pos: { x: 11, y: 6 } },
+      { unitId: "wolf_c", side: "enemy", pos: { x: 0, y: 0 } },
+      { unitId: "wolf_d", side: "enemy", pos: { x: 0, y: 7 } },
+      { unitId: "wolf_e", side: "enemy", pos: { x: 10, y: 4 } },
+      { unitId: "wolf_f", side: "enemy", pos: { x: 6, y: 0 } },
+    ],
+    enemyMods: difficulty(50, 4, 5, 2),
+    doctrine: { kind: "pack" },
+    scouting: "Six wolves. Fast, lightly built, and they go for whoever is left alone.",
+  },
+};

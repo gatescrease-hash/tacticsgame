@@ -5,7 +5,11 @@
 export * from "./types.js";
 export * from "./log.js";
 export { Rng } from "./rng.js";
-export { Grid, manhattan } from "./grid.js";
-export { runBattle, setupBattle, type BattleResult, type BattleState, type BattleOptions } from "./battle.js";
-export { formatLog } from "./format.js";
-export { hitChance, dodgeChance, parryChance, critChance, packetDamage, resolveAttack } from "./combat.js";
+export { Grid, manhattan, hasLineOfSight } from "./grid.js";
+export { runBattle, setupBattle, createUnit, previewTurnOrder, snapshot, type BattleResult } from "./battle.js";
+export type { BattleOptions, BattleState } from "./state.js";
+export { formatLog, describeEvent } from "./format.js";
+export { validateContent } from "./validate.js";
+export { stat, maxHp } from "./stats.js";
+export { computePacket, tierFor, pillarOf } from "./damage.js";
+export { stageChances, landChance, critChance, basicAttack } from "./combat.js";

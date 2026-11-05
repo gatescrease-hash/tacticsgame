@@ -1,42 +1,40 @@
 /**
- * Headless batch runner: play one scenario across many seeds and report.
- *   npm run batch -- [scenario] [runs]
- * The seed for run i is i, so any interesting run can be replayed with
- * `npm run battle -- <scenario> <i>`.
+ * Headless batch runner: play a scenario across many seeds and report win
+ * rates, battle length, damage share, ability usage and tempo sensitivity.
+ *   npm run batch -- [scenario|all] [runs] [--jitter N]
+ * The seed for run i is i, so any run can be replayed with `npm run battle -- <scenario> <i>`.
  */
 import { content, scenarioIds } from "../content/index.js";
-import { runBattle } from "../sim/index.js";
+import { runBattle, validateContent } from "../sim/index.js";
+import { summarize } from "../tools/stats.js";
 
-const [scenario = "duel", runsArg = "1000"] = process.argv.slice(2);
-if (!content.scenarios[scenario]) {
-  console.error(`Unknown scenario '${scenario}'. Available: ${scenarioIds.join(", ")}`);
-  process.exit(1);
-}
+const args = process.argv.slice(2);
+const jIdx = args.indexOf("--jitter");
+const jitter = jIdx >= 0 ? Number(args[jIdx + 1]) : 20;
+const positional = args.filter((a, i) => !a.startsWith("--") && (jIdx < 0 || i !== jIdx + 1));
+const [which = "all", runsArg = "500"] = positional;
 const runs = Number(runsArg);
 
-const wins = { player: 0, enemy: 0, draw: 0 };
-let totalTicks = 0;
-const damageBy = new Map<string, number>();
-const t0 = performance.now();
-
-for (let seed = 1; seed <= runs; seed++) {
-  const r = runBattle(content, scenario, seed);
-  wins[r.winner]++;
-  totalTicks += r.ticks;
-  for (const e of r.log) {
-    if (e.kind !== "attack") continue;
-    const name = r.units[e.uid]!.name;
-    damageBy.set(name, (damageBy.get(name) ?? 0) + e.damage);
-  }
+const problems = validateContent(content);
+if (problems.length) {
+  console.error("Content problems:\n  " + problems.join("\n  "));
+  process.exit(1);
 }
-
-const ms = performance.now() - t0;
-const pct = (n: number) => `${((100 * n) / runs).toFixed(1)}%`;
-console.log(`Scenario '${scenario}', ${runs} runs in ${ms.toFixed(0)} ms (${((runs / ms) * 1000).toFixed(0)} battles/s)`);
-console.log(`  player wins ${pct(wins.player)}, enemy wins ${pct(wins.enemy)}, draws ${pct(wins.draw)}`);
-console.log(`  mean length ${(totalTicks / runs).toFixed(0)} ticks`);
-const totalDamage = [...damageBy.values()].reduce((a, b) => a + b, 0) || 1;
-console.log("  damage share:");
-for (const [name, d] of [...damageBy].sort((a, b) => b[1] - a[1])) {
-  console.log(`    ${name.padEnd(10)} ${((100 * d) / totalDamage).toFixed(1)}%`);
+const targets = which === "all" ? scenarioIds : [which];
+for (const id of targets) {
+  if (!content.scenarios[id]) {
+    console.error(`Unknown scenario '${id}'. Available: ${scenarioIds.join(", ")}`);
+    process.exit(1);
+  }
+  const t0 = performance.now();
+  const results = [];
+  for (let seed = 1; seed <= runs; seed++) results.push(runBattle(content, id, seed));
+  const ms = performance.now() - t0;
+  // Tempo sensitivity: same seeds, perturbed opening gauges. How often does the winner flip?
+  let flips = 0;
+  for (let seed = 1; seed <= runs; seed++) {
+    if (runBattle(content, id, seed, { gaugeJitter: jitter }).winner !== results[seed - 1]!.winner) flips++;
+  }
+  console.log(summarize(id, results, ms, { flips, jitter }));
+  console.log();
 }

@@ -1,21 +1,16 @@
-import { decide } from "./ai.js";
-import { advance, nextActor, openingGauge, ticksToNextReady } from "./clock.js";
-import { resolveAttack } from "./combat.js";
+import { debugCandidates, decide } from "./ai.js";
+import { advance, nextActor, openingGauge, projectTurnOrder, ticksToNextEvent } from "./clock.js";
+import { basicAttack, executeAbility } from "./combat.js";
+import { firePassives, say } from "./effects.js";
 import { Grid, manhattan } from "./grid.js";
-import type { BattleLog, UnitSnapshot } from "./log.js";
 import { Rng } from "./rng.js";
-import type { Content, Side, Stats, Unit } from "./types.js";
+import { emit, type BattleOptions, type BattleState } from "./state.js";
+import { updateStatuses } from "./statuses.js";
+import { maxHp, stepCostAt } from "./stats.js";
+import type { BattleLog, UnitSnapshot } from "./log.js";
+import type { AbilityDef, Content, Modifier, PassiveDef, Side, Stats, TraitDef, Unit, Weights } from "./types.js";
 
-export interface BattleState {
-  scenarioId: string;
-  seed: number;
-  grid: Grid;
-  units: Unit[];
-  rng: Rng;
-  /** Current tick. */
-  t: number;
-  log: BattleLog;
-}
+export type { BattleOptions, BattleState };
 
 export interface BattleResult {
   winner: Side | "draw";
@@ -25,64 +20,127 @@ export interface BattleResult {
   units: Unit[];
 }
 
-export interface BattleOptions {
-  /** Safety valve: declare a draw after this many ticks. */
-  maxTicks?: number;
-}
-
 const WAIT_COST = 50;
 
-export function setupBattle(content: Content, scenarioId: string, seed: number): BattleState {
-  const scenario = content.scenarios[scenarioId];
-  if (!scenario) throw new Error(`unknown scenario '${scenarioId}'`);
+export const DEFAULT_WEIGHTS: Weights = { damage: 10, kill: 8, danger: 3, support: 8, aoe: 8, tempo: 10, aggression: 10 };
+
+function need<T>(table: Record<string, T>, id: string, what: string): T {
+  const v = table[id];
+  if (!v) throw new Error(`unknown ${what} '${id}'`);
+  return v;
+}
+
+/** Build a runtime unit from content. Layers: personal + race -> class -> gear -> passives. */
+export function createUnit(content: Content, unitId: string, side: Side, uid: number): Unit {
+  const def = need(content.units, unitId, "unit");
+  const race = need(content.races, def.raceId, "race");
+  const cls = need(content.classes, def.classId, "class");
+  const weapon = need(content.weapons, def.weaponId, "weapon");
+  const trinkets = def.trinkets.map((id) => need(content.trinkets, id, "trinket"));
+  const traits: TraitDef[] = def.traits.map((id) => need(content.traits, id, "trait"));
+
+  const base: Stats = { ...def.stats };
+  for (const [k, v] of Object.entries(race.statBonus)) base[k as keyof Stats] += v ?? 0;
+
+  const passiveIds = [...race.passives, ...cls.passives, ...(weapon.passives ?? []), ...trinkets.flatMap((t) => t.passives ?? []), ...traits.flatMap((t) => t.passives ?? [])];
+  const passives: PassiveDef[] = [...new Set(passiveIds)].map((id) => need(content.passives, id, "passive"));
+
+  const staticMods: Modifier[] = [
+    ...Object.entries(cls.baseBonus).map(([k, v]) => ({ key: k as keyof Stats, op: "flat" as const, value: v ?? 0 })),
+    ...trinkets.flatMap((t) => t.mods),
+    ...passives.flatMap((p) => p.mods ?? []),
+  ];
+
+  const weights: Weights = { ...DEFAULT_WEIGHTS };
+  for (const t of traits) for (const [k, v] of Object.entries(t.weights)) weights[k as keyof Weights] += v ?? 0;
+  for (const k of Object.keys(weights) as (keyof Weights)[]) weights[k] = Math.max(0, weights[k]);
+
+  const u: Unit = {
+    uid,
+    defId: def.id,
+    name: def.name,
+    side,
+    race,
+    cls,
+    weapon,
+    abilities: [],
+    passives,
+    traits,
+    weights,
+    base,
+    staticMods,
+    statuses: [],
+    buildup: {},
+    cooldowns: {},
+    firedOnce: new Set(),
+    hpFlags: { below50: false, below25: false },
+    pos: { x: 0, y: 0 },
+    hp: 0,
+    gauge: 0,
+    alive: true,
+    intent: "engage",
+    lastReason: null,
+    idle: 0,
+    cache: new Map(),
+  };
+  const abilities: AbilityDef[] = [basicAttack(u), ...cls.abilities.map((id) => need(content.abilities, id, "ability"))];
+  u.abilities = abilities;
+  u.hp = maxHp(u);
+  return u;
+}
+
+export function setupBattle(content: Content, scenarioId: string, seed: number, opts: BattleOptions = {}): BattleState {
+  const scenario = need(content.scenarios, scenarioId, "scenario");
   const grid = new Grid(scenario.map);
-
-  const units: Unit[] = scenario.units.map((su, uid) => {
-    const def = content.units[su.unitId];
-    if (!def) throw new Error(`scenario '${scenarioId}': unknown unit '${su.unitId}'`);
-    const cls = content.classes[def.classId];
-    if (!cls) throw new Error(`unit '${def.id}': unknown class '${def.classId}'`);
-    const weapon = content.weapons[def.weaponId];
-    if (!weapon) throw new Error(`unit '${def.id}': unknown weapon '${def.weaponId}'`);
-    const stats = { ...def.stats };
-    for (const [k, v] of Object.entries(cls.baseBonus)) stats[k as keyof Stats] += v ?? 0;
-    return {
-      uid,
-      defId: def.id,
-      name: def.name,
-      side: su.side,
-      cls,
-      weapon,
-      stats,
-      traits: [...def.traits],
-      pos: { ...su.pos },
-      hp: stats.hp,
-      gauge: 0,
-      alive: true,
-    };
+  const benched = new Set(opts.benched ?? []);
+  const units: Unit[] = [];
+  scenario.units.forEach((su, i) => {
+    if (benched.has(i)) return;
+    const u = createUnit(content, su.unitId, su.side, units.length);
+    if (su.side === "enemy" && scenario.enemyMods) {
+      u.staticMods.push(...scenario.enemyMods);
+      u.cache.clear();
+      u.hp = maxHp(u);
+    }
+    u.pos = { ...(opts.placements?.[i] ?? su.pos) };
+    units.push(u);
   });
-  for (const u of units) u.gauge = openingGauge(u);
 
-  return { scenarioId, seed, grid, units, rng: new Rng(seed), t: 0, log: [] };
+  const jitterRng = new Rng((seed ^ 0x9e3779b9) >>> 0);
+  for (const u of units) {
+    u.gauge = openingGauge(u);
+    if (opts.gaugeJitter) u.gauge = Math.min(99, u.gauge + jitterRng.int(opts.gaugeJitter + 1));
+    if (u.side === "enemy" && scenario.doctrine.kind === "hold") u.intent = "hold";
+  }
+  return { content, scenario, seed, grid, units, rng: new Rng(seed), t: 0, log: [], opts };
 }
 
 export function snapshot(u: Unit): UnitSnapshot {
-  return { uid: u.uid, name: u.name, className: u.cls.name, side: u.side, pos: { ...u.pos }, hp: u.hp, maxHp: u.stats.hp };
+  return {
+    uid: u.uid,
+    name: u.name,
+    className: u.cls.name,
+    raceName: u.race.name,
+    side: u.side,
+    pos: { ...u.pos },
+    hp: u.hp,
+    maxHp: maxHp(u),
+    traits: u.traits.map((t) => t.name),
+  };
 }
 
 /** Simulate a whole battle headlessly ("baked, not computed live"). */
 export function runBattle(content: Content, scenarioId: string, seed: number, opts: BattleOptions = {}): BattleResult {
-  const maxTicks = opts.maxTicks ?? 20_000;
-  const s = setupBattle(content, scenarioId, seed);
-  const scenario = content.scenarios[scenarioId]!;
-  s.log.push({
+  const maxTicks = opts.maxTicks ?? 5_000;
+  const s = setupBattle(content, scenarioId, seed, opts);
+  emit(s, {
     t: 0,
     kind: "start",
     scenario: scenarioId,
     seed,
     width: s.grid.width,
     height: s.grid.height,
-    map: [...scenario.map],
+    map: [...s.scenario.map],
     units: s.units.map(snapshot),
   });
 
@@ -92,56 +150,79 @@ export function runBattle(content: Content, scenarioId: string, seed: number, op
     const enemyAlive = s.units.some((u) => u.alive && u.side === "enemy");
     if (!playerAlive || !enemyAlive) {
       winner = playerAlive ? "player" : enemyAlive ? "enemy" : "draw";
-      s.log.push({ t: s.t, kind: "end", winner, reason: "defeat all enemies" });
+      emit(s, { t: s.t, kind: "end", winner, reason: "defeat all enemies" });
       break;
     }
     if (s.t > maxTicks) {
       winner = "draw";
-      s.log.push({ t: s.t, kind: "end", winner, reason: `timeout after ${maxTicks} ticks` });
+      emit(s, { t: s.t, kind: "end", winner, reason: `timeout after ${maxTicks} ticks` });
       break;
     }
 
     const actor = nextActor(s.units);
     if (!actor) {
-      const dt = ticksToNextReady(s.units);
-      advance(s.units, dt);
-      s.t += dt;
+      advance(s, ticksToNextEvent(s));
+      updateStatuses(s);
       continue;
     }
-    act(s, actor);
+    takeTurn(s, actor);
   }
 
   return { winner, ticks: s.t, log: s.log, units: s.units };
 }
 
-function act(s: BattleState, u: Unit): void {
-  const action = decide(s, u);
-  switch (action.kind) {
-    case "attack": {
-      const target = action.target;
-      const res = resolveAttack(s.rng, u, target, manhattan(u.pos, target.pos));
-      target.hp = Math.max(0, target.hp - res.damage);
-      const cost = u.weapon.cost;
-      u.gauge -= cost;
-      s.log.push({ t: s.t, kind: "attack", uid: u.uid, target: target.uid, ...res, hpAfter: target.hp, cost });
-      if (target.hp === 0) {
-        target.alive = false;
-        s.log.push({ t: s.t, kind: "knockout", uid: target.uid, by: u.uid });
-      }
-      return;
-    }
-    case "move": {
-      const cost = u.cls.moveCost * s.grid.tile(action.to).moveMult;
-      const from = { ...u.pos };
-      u.pos = { ...action.to };
-      u.gauge -= cost;
-      s.log.push({ t: s.t, kind: "move", uid: u.uid, from, to: { ...action.to }, cost });
-      return;
-    }
-    case "wait": {
-      u.gauge -= WAIT_COST;
-      s.log.push({ t: s.t, kind: "wait", uid: u.uid, cost: WAIT_COST });
-      return;
-    }
+/** Commander layer: doctrines set squad intent. Ambushers hold until provoked. */
+function updateIntent(s: BattleState, u: Unit): void {
+  if (u.intent !== "hold") return;
+  const d = s.scenario.doctrine;
+  const radius = d.kind === "hold" ? d.radius : 0;
+  const squad = s.units.filter((v) => v.side === u.side);
+  const provoked =
+    squad.some((v) => !v.alive || v.hp < maxHp(v)) ||
+    squad.some((v) => v.alive && s.units.some((e) => e.alive && e.side !== u.side && manhattan(e.pos, v.pos) <= radius));
+  if (provoked) {
+    for (const v of squad) v.intent = "engage";
+    say(s, u, "advance", true);
   }
+}
+
+function takeTurn(s: BattleState, u: Unit): void {
+  emit(s, s.opts.recordQueue ? { t: s.t, kind: "turn", uid: u.uid, queue: projectTurnOrder(s.units, 8) } : { t: s.t, kind: "turn", uid: u.uid });
+  firePassives(s, u, "onTurnStart");
+  if (!u.alive) return;
+  updateIntent(s, u);
+
+  const { choice, candidates } = decide(s, u);
+  if (s.opts.debug) emit(s, { t: s.t, kind: "decide", uid: u.uid, chosen: choice.label, candidates: debugCandidates(candidates) });
+
+  u.idle = choice.kind === "wait" ? u.idle + 1 : choice.reason === "retreat" ? u.idle : 0;
+  switch (choice.kind) {
+    case "ability":
+      if (choice.reason !== "attack") say(s, u, choice.reason);
+      executeAbility(s, u, choice.ability, choice.target);
+      return;
+    case "move": {
+      if (choice.reason !== "advance" || u.lastReason === null) say(s, u, choice.reason);
+      const from = { ...u.pos };
+      const cost = stepCostAt(u, s.grid, choice.to);
+      // Enemies adjacent before the step and not after may punish the disengage.
+      const leaving = s.units.filter((e) => e.alive && e.side !== u.side && manhattan(e.pos, from) === 1 && manhattan(e.pos, choice.to) > 1);
+      for (const e of leaving) firePassives(s, e, "onEnemyDisengage", u, { melee: true });
+      u.gauge -= cost;
+      if (!u.alive) return;
+      u.pos = { ...choice.to };
+      emit(s, { t: s.t, kind: "move", uid: u.uid, from, to: { ...choice.to }, cost });
+      return;
+    }
+    case "wait":
+      u.gauge -= WAIT_COST;
+      emit(s, { t: s.t, kind: "wait", uid: u.uid, cost: WAIT_COST });
+      return;
+  }
+}
+
+/** Opening turn order for the setup screen preview, given placements. */
+export function previewTurnOrder(content: Content, scenarioId: string, n: number, opts: BattleOptions = {}): { units: UnitSnapshot[]; order: number[] } {
+  const s = setupBattle(content, scenarioId, 0, opts);
+  return { units: s.units.map(snapshot), order: projectTurnOrder(s.units, n) };
 }

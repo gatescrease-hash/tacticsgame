@@ -19,12 +19,30 @@
             <option value="4">4x</option>
           </select>
         </label>
-        <button id="play">Bake &amp; play</button>
+        <button id="fight">Fight!</button>
+        <button id="pause" class="secondary" hidden>Pause</button>
+        <button id="back" class="secondary" hidden>Back to setup</button>
       </div>
     </header>
     <main>
-      <canvas id="board"></canvas>
-      <pre id="log"></pre>
+      <section class="stage">
+        <div id="turnbar" class="turnbar" aria-label="Turn order"></div>
+        <div class="board-wrap"><canvas id="board"></canvas><div id="banner" class="banner" hidden></div></div>
+        <p id="hint" class="hint"></p>
+      </section>
+      <aside class="side">
+        <div id="setup-panel">
+          <h2>Scouting report</h2>
+          <p id="scouting" class="scouting"></p>
+          <ul id="enemies" class="roster enemy"></ul>
+          <h2>Your company</h2>
+          <ul id="roster" class="roster"></ul>
+        </div>
+        <div id="battle-panel" hidden>
+          <h2>Battle log</h2>
+          <div id="log" class="log"></div>
+        </div>
+      </aside>
     </main>
     <script type="module" src="/src/web/main.ts"></script>
   </body>
