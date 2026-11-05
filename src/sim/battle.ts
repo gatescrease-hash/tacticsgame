@@ -110,7 +110,12 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
   const rules: Rules = { ...DEFAULT_RULES, ...opts.rules };
   const benched = new Set(opts.benched ?? []);
   // A run's roster replaces the scenario's preset player units; they start at the anchor and form up.
-  const anchor = opts.anchor ?? scenario.units.find((su) => su.side === "player")?.pos ?? { x: 0, y: 0 };
+  // Default anchor: the centre of the scenario's own player positions (as single battles form up).
+  const presets = scenario.units.filter((su) => su.side === "player");
+  const anchor = opts.anchor ?? {
+    x: Math.round(presets.reduce((a, su) => a + su.pos.x, 0) / Math.max(1, presets.length)),
+    y: Math.round(presets.reduce((a, su) => a + su.pos.y, 0) / Math.max(1, presets.length)),
+  };
   const entries: { unitId: string; side: Side; pos: Pos; extras?: UnitExtras; index: number }[] = opts.roster
     ? [
         ...opts.roster.map((r) => ({ unitId: r.unitId, side: "player" as const, pos: anchor, extras: r, index: -1 })),
@@ -132,6 +137,17 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
     u.pos = { ...((i >= 0 ? opts.placements?.[i] : undefined) ?? su.pos) };
     units.push(u);
   });
+
+  if (rules.formation && opts.anchorShift) {
+    const z = scenario.deployZone;
+    for (const u of units) {
+      if (u.side !== "player") continue;
+      u.pos = {
+        x: Math.min(z.x1, Math.max(z.x0, u.pos.x + opts.anchorShift.x)),
+        y: Math.min(z.y1, Math.max(z.y0, u.pos.y + opts.anchorShift.y)),
+      };
+    }
+  }
 
   if (rules.formation) {
     const enemies = units.filter((u) => u.side === "enemy");

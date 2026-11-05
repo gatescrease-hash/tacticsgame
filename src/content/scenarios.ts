@@ -77,7 +77,7 @@ export const scenarios: Record<string, ScenarioDef> = {
       { unitId: "vex", side: "enemy", pos: { x: 8, y: 2 } },
       { unitId: "gorm", side: "enemy", pos: { x: 9, y: 3 } },
     ],
-    enemyMods: difficulty(50, 4, 5, 2, -5),
+    enemyMods: difficulty(50, 4, 5, 2, -58),
     doctrine: { kind: "advance" },
     scouting: "A duelist and a lizardfolk brute. The brute wades through swamp like it isn't there.",
   },

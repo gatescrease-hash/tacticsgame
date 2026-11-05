@@ -72,7 +72,7 @@ function buildTable(id: string, setups: number): void {
     for (const enemyPower of LEVELS) {
       const row: SetupResult[] = [];
       for (let k = 0; k < setups; k++) {
-        const samples = sampleSetup(content, id, { ...randomSetup(id, k, style === "careless"), enemyPower });
+        const samples = sampleSetup(content, id, { ...randomSetup(id, k, style === "careless"), enemyPower }, 24, true);
         const wins = samples.filter((x) => x.winner === "player");
         const losses = samples.filter((x) => x.winner !== "player");
         row.push({

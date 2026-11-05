@@ -45,7 +45,19 @@ export interface SettleOptions {
   difficulty?: Difficulty;
   /** Number of sample battles (default 24). */
   samples?: number;
+  /**
+   * Spread samples over the chosen spot and its neighbours (default true), so the
+   * settled result reflects "roughly here with this roster" and a one-tile shift
+   * can't flip it. The battle shown is preferably one formed up exactly where chosen.
+   */
+  smoothPlacement?: boolean;
 }
+
+/** Squad shifts cycled through by the samples: the chosen spot first, then its 8 neighbours. */
+const SHIFTS = [
+  { x: 0, y: 0 }, { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
+  { x: 1, y: 1 }, { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 },
+];
 
 export interface SettleResult {
   /** The battle to show (re-run with the caller's options, e.g. recordQueue). */
@@ -80,17 +92,19 @@ export interface Sample {
   seed: number;
   winner: Side | "draw";
   margin: number;
+  /** Squad shift this sample used (smoothPlacement). */
+  shift: { x: number; y: number };
 }
 
 /** Simulate a setup across the fixed sample seeds. */
-export function sampleSetup(content: Content, scenarioId: string, opts: BattleOptions = {}, n = 24): Sample[] {
-  // Samples don't need the playback extras.
-  const sampleOpts: BattleOptions = { ...opts, recordQueue: false, debug: false };
+export function sampleSetup(content: Content, scenarioId: string, opts: BattleOptions = {}, n = 24, smooth = false): Sample[] {
   const samples: Sample[] = [];
   for (let i = 0; i < n; i++) {
     const seed = SAMPLE_BASE + i;
-    const r = runBattle(content, scenarioId, seed, sampleOpts);
-    samples.push({ seed, winner: r.winner, margin: winMargin(r) });
+    const shift = smooth ? SHIFTS[i % SHIFTS.length]! : SHIFTS[0]!;
+    // Samples don't need the playback extras.
+    const r = runBattle(content, scenarioId, seed, { ...opts, recordQueue: false, debug: false, anchorShift: shift });
+    samples.push({ seed, winner: r.winner, margin: winMargin(r), shift });
   }
   return samples;
 }
@@ -104,7 +118,7 @@ export function settleBattle(
 ): SettleResult {
   const diff = DIFFICULTIES[settle.difficulty ?? "normal"];
   const n = Math.max(1, settle.samples ?? 24);
-  const samples = sampleSetup(content, scenarioId, opts, n);
+  const samples = sampleSetup(content, scenarioId, opts, n, settle.smoothPlacement ?? true);
   const wins = samples.filter((x) => x.winner === "player").length;
   const winProb = Math.round((100 * wins) / n);
   const settled: Side = winProb >= diff.threshold ? "player" : "enemy";
@@ -113,6 +127,9 @@ export function settleBattle(
   let matching = samples.filter((x) => x.winner === settled);
   if (matching.length === 0) matching = samples.filter((x) => x.winner !== "player");
   if (matching.length === 0) matching = samples;
+  // Prefer battles formed up exactly where the player chose.
+  const exact = matching.filter((x) => x.shift.x === 0 && x.shift.y === 0);
+  if (exact.length > 0) matching = exact;
   matching.sort((a, b) => a.margin - b.margin || a.seed - b.seed);
 
   // Pick around the difficulty's margin percentile; the user's seed varies which nearby battle is shown.
@@ -121,6 +138,6 @@ export function settleBattle(
   const idx = Math.min(matching.length - 1, Math.max(0, target + jitter));
   const chosen = matching[idx]!;
 
-  const result = runBattle(content, scenarioId, chosen.seed, opts);
+  const result = runBattle(content, scenarioId, chosen.seed, { ...opts, anchorShift: chosen.shift });
   return { result, winProb, samples: n, settled: result.winner, seed: chosen.seed, margin: chosen.margin };
 }

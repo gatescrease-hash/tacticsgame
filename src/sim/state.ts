@@ -99,6 +99,11 @@ export interface BattleOptions {
    */
   roster?: { unitId: string; mods?: Modifier[]; trinkets?: string[] }[];
   anchor?: Pos;
+  /**
+   * Shift the player's squad (anchor, or all placements) by this many tiles before it
+   * forms up, clamped to the deploy zone. Used by settling to sample nearby spots.
+   */
+  anchorShift?: Pos;
   /** Override combat rules (merged over DEFAULT_RULES). */
   rules?: Partial<Rules>;
 }
