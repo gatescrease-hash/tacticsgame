@@ -25,6 +25,12 @@ export const PRESETS: Record<string, Partial<Rules>> = {
   "streams+charge": { unitStreams: true, charge: true },
   "streams+underdog": { unitStreams: true, underdog: 10 },
   all: { unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10 },
+  // Ablations: everything except one rule.
+  "all-streams": { unitStreams: false, hpScale: 150, damageSpread: 20, charge: true, underdog: 10 },
+  "all-hp": { unitStreams: true, hpScale: 100, damageSpread: 20, charge: true, underdog: 10 },
+  "all-spread": { unitStreams: true, hpScale: 150, damageSpread: 0, charge: true, underdog: 10 },
+  "all-charge": { unitStreams: true, hpScale: 150, damageSpread: 20, charge: false, underdog: 10 },
+  "all-underdog": { unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 0 },
 };
 
 const args = process.argv.slice(2);
