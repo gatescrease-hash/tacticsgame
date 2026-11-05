@@ -29,6 +29,8 @@ export const PRESETS: Record<string, Partial<Rules>> = {
   "f+meter+focus": { ...F, luck: "meter", focusFire: true },
   "f+meter+focus-spread": { ...F, luck: "meter", focusFire: true, damageSpread: 0 },
   "f+meter+focus+hold-charge": { ...F, luck: "meter", focusFire: true, playerHold: 3, charge: false },
+  "f+meter+focus+ud25": { ...F, luck: "meter", focusFire: true, underdog: 25 },
+  "f+meter+focus+hold-charge+ud25": { ...F, luck: "meter", focusFire: true, playerHold: 3, charge: false, underdog: 25 },
 };
 
 const MIRROR_MAP = [
@@ -111,6 +113,38 @@ function measure(id: string, rules: Partial<Rules>, enemyPower = 0) {
 }
 
 const f = (v: number) => v.toFixed(0).padStart(4);
+
+/** Enemy power (%) at which a decreasing win% curve crosses `target`, by linear interpolation. */
+function crossing(levels: number[], curve: number[], target: number): number {
+  if (curve[0]! < target) return levels[0]!;
+  for (let i = 1; i < curve.length; i++) {
+    if (curve[i]! <= target) {
+      const a = curve[i - 1]!;
+      const b = curve[i]!;
+      return levels[i - 1]! + ((a - target) / Math.max(1e-9, a - b)) * (levels[i]! - levels[i - 1]!);
+    }
+  }
+  return levels.at(-1)!;
+}
+
+if (args.includes("--curve")) {
+  // Mirror strength curves: where does an even fight tip, and how wide is the coin-flip band?
+  const LV = [-30, -20, -10, 0, 10, 20, 30];
+  console.log(`mirror curves, placements ${P} x seeds ${S}. win% at enemy power ${LV.join(" ")}; centre = 50% point, width = 80%->20%`);
+  for (const name of presets) {
+    const rules = PRESETS[name];
+    if (!rules) throw new Error(`unknown preset ${name}`);
+    console.log(`\n${name}`);
+    for (const id of Object.keys(MIRRORS)) {
+      const curve = LV.map((lvl) => measure(id, rules, lvl).win);
+      const c50 = crossing(LV, curve, 50);
+      const width = crossing(LV, curve, 20) - crossing(LV, curve, 80);
+      console.log(`  ${id}  ${curve.map(f).join("")}   centre ${c50.toFixed(0).padStart(4)}  width ${width.toFixed(0).padStart(3)}`);
+    }
+  }
+  process.exit(0);
+}
+
 console.log(`placements ${P} x seeds ${S}.  cells: win% / placeSD / coin%   (mirrors: win% at enemy +0 / +15 / +30)`);
 for (const name of presets) {
   const rules = PRESETS[name];
