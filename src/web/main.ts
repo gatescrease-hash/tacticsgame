@@ -184,6 +184,7 @@ function showSetup() {
   backBtn.hidden = true;
   fightBtn.hidden = false;
   runBtn.hidden = false;
+  scenarioSel.parentElement!.hidden = false;
   scenarioSel.disabled = false;
   difficultySel.disabled = false;
   hint.textContent =
@@ -637,7 +638,7 @@ function showRunSetup() {
   backBtn.hidden = true;
   fightBtn.hidden = false;
   runBtn.hidden = true;
-  scenarioSel.disabled = true;
+  scenarioSel.parentElement!.hidden = true;
   difficultySel.disabled = true;
   const enc = currentEncounter(content, run);
   runDeployed = defaultDeployment(run, enc.slots);
