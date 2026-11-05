@@ -39,7 +39,7 @@ where they form up; enemy strength rises 4% per battle. Afterwards deployed unit
 units half, and they're fatigued next fight), and you pick a reward: a recruit, training, a trinket,
 or rest (+1 heart). Losses cost 1-3 hearts by how badly they went; at 0 the run is over.
 
-Scenarios: `duel`, `skirmish`, `patrol` (Arago militia, textbook formation), `foundry` (golem and
+Scenarios: `cliffs` (crossbows on a 2 m bluff, a chasm of pits, leaping wolves), `duel`, `skirmish`, `patrol` (Arago militia, textbook formation), `foundry` (golem and
 automatons: fire and minds don't work), `marsh` (lizardfolk ambush plus mudlings that water
 dissolves), `wolves` (a pack that goes for stragglers).
 
@@ -88,6 +88,16 @@ Key mechanics, briefly:
   possible targets. Traits shift weights (cowards weigh danger, smart units weigh kills and AoE).
   Impatience and battle pressure erode caution so standoffs end. Doctrines (advance, hold/ambush,
   hunt a class tag, pack) set enemy intent and target priorities.
+- **Elevation and pits** (`src/sim/movement.ts`, `grid.ts`, `combat.ts`): a scenario may give ground
+  heights in whole metres (`heights`, digits per tile). Stepping up 1 m costs +50% movement; climbing
+  more than your jump height (1 m; 2 m for skirmishers, duelists, sandstalkers and wolves) is
+  impossible; dropping is fine up to jump + 1 m. Melee only connects across 1 m of height (reach
+  weapons: their range in metres), so a swordsman under a 2 m cliff can't touch the archer on top.
+  Ranged attacks and spells get +/-10% damage per metre of height advantage (max 20%) and +1 range
+  from 2 m up; terrain 2 m above both ends of a sight line blocks it. Pits (`O`) have no footing
+  and don't block sight: jumpers leap a single pit tile, flyers (race move tag) cross freely, and
+  anyone pushed into one falls and is knocked out. The AI plans through the same rules, values high
+  ground for ranged units, and discounts melee threats that can't climb to it.
 - **Difficulty:** each scenario has an `enemyMods` modifier layer (`difficulty()` in
   `scenarios.ts`); fine-tune with its smooth `power` term rather than flat stats.
 - **Combat rules** (`Rules` in `src/sim/state.ts`, overridable per battle) exist to tame tempo and
@@ -274,6 +284,8 @@ deployment and rewards). Measured on normal, 16 runs each (noisy):
 
 ## Known issues and next steps
 
+- **Elevation content is thin:** only Cliffside uses heights and pits so far, and no unit flies yet
+  (the rules support it). Cliffside joined the run rotation after the auto-player numbers above.
 - **Run loop balance is first-pass.** The auto-player numbers come from 16 runs per cell. Skirmish
   (2 slots) is the most common run-ender. Retrying a lost battle (design notes) isn't built yet.
 - **Scenarios represent early-run fights.** At +0% enemy strength they settle as wins on normal for
