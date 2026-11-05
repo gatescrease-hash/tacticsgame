@@ -25,8 +25,12 @@ export interface Rules {
 
 export const BASELINE_RULES: Rules = { unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0 };
 
-/** The rules battles use unless told otherwise. */
-export const DEFAULT_RULES: Rules = { ...BASELINE_RULES };
+/**
+ * The rules battles use unless told otherwise. Chosen with `npm run sensitivity`:
+ * together these cut the value of a +/-30 opening head start from ~37 to ~7 win-%
+ * points and made every difficulty curve monotonic (see README "Sensitivity").
+ */
+export const DEFAULT_RULES: Rules = { unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10 };
 
 export interface BattleOptions {
   /** Safety valve: declare a draw after this many ticks. */

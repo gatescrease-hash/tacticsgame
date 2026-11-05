@@ -1,9 +1,15 @@
 import type { Modifier, ScenarioDef } from "../sim/types.js";
 
-/** Difficulty knob applied to every enemy: +hp%, +strength, +skill, +defense. Tuned with `npm run batch`. */
-function difficulty(hpPct: number, strength: number, skill: number, defense: number): Modifier[] {
+/**
+ * Difficulty knob applied to every enemy: +hp%, +strength, +skill, +defense, and
+ * `power`, a smooth percent on both HP and damage dealt. Prefer `power` for fine
+ * tuning: flat stat steps cross hits-to-kill breakpoints and cause cliffs.
+ * Tune with `npm run sensitivity -- --detail` (curve column) and `npm run batch`.
+ */
+function difficulty(hpPct: number, strength: number, skill: number, defense: number, power = 0): Modifier[] {
   return [
-    { key: "hp", op: "pct", value: hpPct },
+    { key: "hp", op: "pct", value: hpPct + power },
+    { key: "damageDealt", op: "pct", value: power },
     { key: "strength", op: "flat", value: strength },
     { key: "skill", op: "flat", value: skill },
     { key: "defense", op: "flat", value: defense },
@@ -53,7 +59,7 @@ export const scenarios: Record<string, ScenarioDef> = {
       { unitId: "vex", side: "enemy", pos: { x: 8, y: 2 } },
       { unitId: "gorm", side: "enemy", pos: { x: 9, y: 3 } },
     ],
-    enemyMods: difficulty(50, 4, 5, 2),
+    enemyMods: difficulty(50, 4, 5, 2, -5),
     doctrine: { kind: "advance" },
     scouting: "A duelist and a lizardfolk brute. The brute wades through swamp like it isn't there.",
   },
@@ -85,7 +91,7 @@ export const scenarios: Record<string, ScenarioDef> = {
       { unitId: "arago_xbow_a", side: "enemy", pos: { x: 10, y: 1 } },
       { unitId: "arago_xbow_b", side: "enemy", pos: { x: 10, y: 6 } },
     ],
-    enemyMods: difficulty(20, 1, 2, 0),
+    enemyMods: difficulty(20, 1, 2, 0, 0),
     doctrine: { kind: "advance" },
     scouting: "Six Arago soldiers. A knight and pikes up front, two crossbows behind, a sergeant who rallies them. Mostly chain and leather.",
   },
@@ -116,7 +122,7 @@ export const scenarios: Record<string, ScenarioDef> = {
       { unitId: "automaton_b", side: "enemy", pos: { x: 10, y: 5 } },
       { unitId: "automaton_c", side: "enemy", pos: { x: 9, y: 6 } },
     ],
-    enemyMods: difficulty(20, 1, 1, 0),
+    enemyMods: difficulty(20, 1, 1, 0, 12),
     doctrine: { kind: "advance" },
     scouting:
       "A golem and three automatons, all plate and stone, advancing without formation. Minds won't break and fire won't bite stone. Bring something heavy, or something that conducts.",
@@ -149,7 +155,7 @@ export const scenarios: Record<string, ScenarioDef> = {
       { unitId: "mudling_a", side: "enemy", pos: { x: 7, y: 5 } },
       { unitId: "mudling_b", side: "enemy", pos: { x: 10, y: 6 } },
     ],
-    enemyMods: difficulty(25, 3, 2, 1),
+    enemyMods: difficulty(25, 3, 2, 1, -12),
     doctrine: { kind: "hold", radius: 3 },
     scouting: "Tracks in the mud, then nothing. Something waits in the reeds. Blades seem to sink into whatever lives in the water.",
   },
@@ -181,7 +187,7 @@ export const scenarios: Record<string, ScenarioDef> = {
       { unitId: "wolf_e", side: "enemy", pos: { x: 10, y: 4 } },
       { unitId: "wolf_f", side: "enemy", pos: { x: 6, y: 0 } },
     ],
-    enemyMods: difficulty(50, 4, 5, 2),
+    enemyMods: difficulty(50, 4, 5, 2, -12),
     doctrine: { kind: "pack" },
     scouting: "Six wolves. Fast, lightly built, and they go for whoever is left alone.",
   },
