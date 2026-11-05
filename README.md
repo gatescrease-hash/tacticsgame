@@ -22,11 +22,14 @@ npm run typecheck                        # also checks the sim has no DOM/Node d
 ## Playing the demo
 
 1. Pick a scenario. Read the scouting report: a general picture of the enemy, not every detail.
-2. Click one of your units, then a highlighted deploy tile to move it (click another unit to swap).
-   Untick units to bench them. The opening turn order updates as you go.
-3. Press **Fight!** The whole battle is simulated in a web worker, then replayed at 1x/2x/4x with
-   HP bars, status tags, damage numbers, speech bubbles and a live turn-order bar.
-4. Change the seed or your setup and try again. Same setup + same seed = the same battle.
+2. Click a highlighted deploy tile to choose where your squad forms up; it arranges itself by role
+   (melee in front, support in the middle, ranged behind). Untick units to bench them. The opening
+   turn order updates as you go.
+3. Press **Fight!** Your setup is simulated across 24 sample battles in a web worker; the
+   difficulty settles the result from that win rate, and one of those battles is replayed at
+   1x/2x/4x with HP bars, status tags, damage numbers, speech bubbles and a live turn-order bar.
+4. The result depends only on your setup (roster, bench, where the squad forms up). Changing the
+   seed shows a different battle with the same result.
 
 Scenarios: `duel`, `skirmish`, `patrol` (Arago militia, textbook formation), `foundry` (golem and
 automatons: fire and minds don't work), `marsh` (lizardfolk ambush plus mudlings that water
@@ -163,7 +166,36 @@ Findings so far:
 - Hold and focus fire shift the tipping point strongly for some compositions (3v3 with archer and
   healer: +30% enemy power to tip) but not others (melee 2v2, 5v5).
 
+## Settled outcomes
+
+`src/sim/settle.ts`. A battle's result is decided before you watch it:
+
+1. The setup is simulated across 24 fixed sample seeds (so the result depends only on the setup).
+2. The difficulty turns the player's win rate into a result: easy wins at >= 15%, normal at
+   >= 35%, hard at >= 55%. (At exact parity the raw win rate is ~35-45%, because the player's side
+   tends to step into range first, so normal sits at 35 to give even fights to the player.)
+3. One of the samples with that result is replayed, chosen by margin: comfortable on easy
+   (75th percentile of the winner's remaining HP), typical on normal, scrappy on hard. The seed box
+   only varies which nearby battle is shown.
+
+Every battle shown is a real, unaltered simulation; only the choice of which one is steered.
+`npm run battle -- <scenario> <seed> --settle normal` and `npm run robustness -- --settle` exercise it.
+
+Measured (`robustness --settle`, 12 random placements each): even mirror fights win on every placement
+on easy; a +30% stronger enemy loses on every placement for 2v2 and 3v3. On normal, an even 2v2
+wins on all placements, but even 3v3 and 5v5 only on 33-50%, because raw parity win rates differ by
+composition (median 33% for 3v3, 42% for 5v5). The default scenarios (raw 67-84%) win on easy
+and normal with any placement.
+
 ## Known issues and next steps
+
+- **Settle thresholds are global, but parity isn't.** The raw win rate of an even fight differs by
+  composition, so one threshold can't give every even fight to the player on normal without also
+  handing some +15% fights over. Options: shrink the composition bias (the player stepping into
+  range first), or calibrate per fight (for example, compare against the same squad mirrored).
+- **Scenarios are now easy on normal.** They were tuned to raw 67-84% wins; with settled outcomes
+  they should be tuned so a careless roster sits below the threshold and a good one above it.
+- Settling costs 24 battles per Fight (about 0.9 s for patrol in the browser).
 
 - **Tempo is still knife-edge in small fights.** Skirmish (2v2) still swings 44 points on a
   ±30 head start, and jittered openings still flip about as often as a re-roll would (ratio

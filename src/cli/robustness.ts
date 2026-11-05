@@ -1,7 +1,7 @@
 /**
  * Robustness report: is the outcome decided by *what* you bring, not by exactly
  * where you dropped it or by the dice?
- *   npm run robustness -- [--placements 10] [--seeds 10] [--presets a,b]
+ *   npm run robustness -- [--placements 10] [--seeds 10] [--presets a,b] [--curve] [--settle]
  *
  * For each scenario it samples random player placements inside the deploy zone,
  * and several seeds per placement:
@@ -16,7 +16,7 @@
  * +30% power: parity should go to the player, a clearly stronger enemy shouldn't.
  */
 import { content } from "../content/index.js";
-import { DEFAULT_RULES, Rng, runBattle, type Content, type Pos, type Rules, type ScenarioDef } from "../sim/index.js";
+import { DEFAULT_RULES, DIFFICULTIES, Rng, runBattle, settleBattle, type Content, type Pos, type Rules, type ScenarioDef } from "../sim/index.js";
 
 const F = { formation: true };
 export const PRESETS: Record<string, Partial<Rules>> = {
@@ -140,6 +140,26 @@ function crossing(levels: number[], curve: number[], target: number): number {
     }
   }
   return levels.at(-1)!;
+}
+
+if (args.includes("--settle")) {
+  // Settled outcomes: the result depends only on the setup. Report the share of random
+  // placements that win on each difficulty, for real scenarios and mirrors at several strengths.
+  const diffs = Object.keys(DIFFICULTIES) as (keyof typeof DIFFICULTIES)[];
+  const row = (id: string, enemyPower: number) => {
+    const sc = world.scenarios[id]!;
+    const probs: number[] = [];
+    for (let k = 0; k < P; k++) probs.push(settleBattle(world, id, 1, { placements: randomPlacement(sc, k), enemyPower }).winProb);
+    const won = diffs.map((d) => (100 * probs.filter((p) => p >= DIFFICULTIES[d].threshold).length) / P);
+    probs.sort((a, b) => a - b);
+    return `${won.map(f).join("")}      p range ${probs[0]}-${probs.at(-1)}  median ${probs[Math.floor(P / 2)]}`;
+  };
+  console.log(`settled outcomes over ${P} random placements: % of placements won on ${diffs.join(" / ")}`);
+  for (const id of real) console.log(`  ${id.padEnd(16)}${row(id, 0)}`);
+  for (const id of Object.keys(MIRRORS)) {
+    for (const lvl of [-15, 0, 15, 30]) console.log(`  ${`${id} enemy ${lvl >= 0 ? "+" : ""}${lvl}%`.padEnd(16)}${row(id, lvl)}`);
+  }
+  process.exit(0);
 }
 
 if (args.includes("--curve")) {

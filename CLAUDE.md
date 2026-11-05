@@ -31,5 +31,7 @@ anticipating every future need. It is fine to leave TODOs.
 - Players never write rules; personality = utility-AI weights (see `traits.ts`).
 - After AI or content changes, rerun `npm run batch -- all 100` and watch for draws (stalemates)
   and win-rate swings; tune scenario `enemyMods` (prefer the smooth `power` term) if needed.
+- The browser shows *settled* outcomes (`src/sim/settle.ts`): results depend on the setup, not the
+  seed. Check `npm run robustness -- --settle` after changes to rules, AI or difficulty thresholds.
 - After rule or AI changes that could affect fairness, run `npm run sensitivity -- --detail`
   (slow: run presets in parallel with `--presets`) and compare against the README table.

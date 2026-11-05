@@ -6,7 +6,7 @@
  * Rendering only ever reads the battle log, never simulation state.
  */
 import { content, scenarioIds } from "../content/index.js";
-import { describeEvent, previewTurnOrder, type BattleEvent, type BattleLog, type Pos, type UnitSnapshot } from "../sim/index.js";
+import { describeEvent, previewTurnOrder, type BattleEvent, type BattleLog, type Difficulty, type Pos, type UnitSnapshot } from "../sim/index.js";
 import type { BakeRequest } from "./bake.worker.js";
 
 const TILE = 56;
@@ -14,6 +14,7 @@ const TILE = 56;
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const scenarioSel = $<HTMLSelectElement>("scenario");
 const seedInput = $<HTMLInputElement>("seed");
+const difficultySel = $<HTMLSelectElement>("difficulty");
 const speedSel = $<HTMLSelectElement>("speed");
 const fightBtn = $<HTMLButtonElement>("fight");
 const pauseBtn = $<HTMLButtonElement>("pause");
@@ -357,14 +358,23 @@ function stopPlayback() {
 fightBtn.addEventListener("click", () => {
   fightBtn.disabled = true;
   fightBtn.textContent = "Baking…";
-  const req: BakeRequest = { scenario: setup.scenarioId, seed: Number(seedInput.value), opts: opts() };
+  const req: BakeRequest = { scenario: setup.scenarioId, seed: Number(seedInput.value), difficulty: difficultySel.value as Difficulty, opts: opts() };
   worker.postMessage(req);
 });
 
-worker.onmessage = (ev: MessageEvent<{ log: BattleLog; winner: string; ms: number }>) => {
+interface BakeResponse {
+  log: BattleLog;
+  winner: string;
+  ms: number;
+  winProb: number;
+  samples: number;
+  margin: number;
+}
+
+worker.onmessage = (ev: MessageEvent<BakeResponse>) => {
   fightBtn.disabled = false;
   fightBtn.textContent = "Fight!";
-  startPlayback(ev.data.log, ev.data.ms);
+  startPlayback(ev.data);
 };
 
 pauseBtn.addEventListener("click", () => {
@@ -383,7 +393,8 @@ pauseBtn.addEventListener("click", () => {
 
 backBtn.addEventListener("click", () => showSetup());
 
-function startPlayback(log: BattleLog, bakeMs: number) {
+function startPlayback(bake: BakeResponse) {
+  const { log } = bake;
   const start = log[0];
   if (!start || start.kind !== "start") return;
   stopPlayback();
@@ -397,7 +408,11 @@ function startPlayback(log: BattleLog, bakeMs: number) {
   scenarioSel.disabled = true;
   banner.hidden = true;
   logEl.replaceChildren();
-  hint.textContent = `Baked ${log.length} events in ${bakeMs.toFixed(0)} ms, now replaying. Nothing is decided while you watch.`;
+  // Prototype transparency: show how the result was settled.
+  hint.textContent =
+    `Your setup won ${bake.winProb}% of ${bake.samples} simulated battles; on ${difficultySel.value} that settles as a ` +
+    `${bake.winner === "player" ? "win" : "loss"}. Showing one of those battles (simulated in ${bake.ms.toFixed(0)} ms). ` +
+    `Change the seed to watch a different one with the same result.`;
   sizeCanvas(start.width, start.height);
   const units = new Map<number, PUnit>(
     start.units.map((u) => [u.uid, { ...u, x: u.pos.x, y: u.pos.y, from: u.pos, to: u.pos, moveStart: 0, moveEnd: 0, alive: true, statuses: new Map() }]),

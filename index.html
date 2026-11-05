@@ -11,7 +11,14 @@
       <h1>Tactics Autobattler <small>prototype</small></h1>
       <div class="controls">
         <label>Scenario <select id="scenario"></select></label>
-        <label>Seed <input id="seed" type="number" value="1" min="0" /></label>
+        <label>Difficulty
+          <select id="difficulty">
+            <option value="easy">Easy</option>
+            <option value="normal" selected>Normal</option>
+            <option value="hard">Hard</option>
+          </select>
+        </label>
+        <label>Seed <input id="seed" type="number" value="1" min="0" title="Varies which battle you see, not who wins" /></label>
         <label>Speed
           <select id="speed">
             <option value="1">1x</option>
