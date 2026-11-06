@@ -89,6 +89,8 @@ const flag = (name: string, dflt: string) => {
   return i >= 0 ? args[i + 1]! : dflt;
 };
 const P = Number(flag("placements", "10"));
+/** Extra rule overrides for --settle and --parity, e.g. --rules '{"commit":0}'. */
+const extraRules = JSON.parse(flag("rules", "{}")) as Partial<Rules>;
 const S = Number(flag("seeds", "10"));
 const presets = flag("presets", Object.keys(PRESETS).join(",")).split(",");
 const real = ["skirmish", "patrol", "foundry", "marsh", "wolves"];
@@ -180,7 +182,7 @@ if (args.includes("--parity")) {
     const cells = LV.map((enemyPower) => {
       const ps: number[] = [];
       for (let k = 0; k < P; k++) {
-        const m = symmetricMirror(team, k, {});
+        const m = symmetricMirror(team, k, extraRules);
         let w = 0;
         for (let seed = 1; seed <= S; seed++) if (runBattle(m.world, m.id, seed, { rules: m.rules, enemyPower }).winner === "player") w++;
         ps.push((100 * w) / S);
@@ -200,7 +202,7 @@ if (args.includes("--settle")) {
   const row = (id: string, enemyPower: number) => {
     const sc = world.scenarios[id]!;
     const probs: number[] = [];
-    for (let k = 0; k < P; k++) probs.push(settleBattle(world, id, 1, { placements: randomPlacement(sc, k), enemyPower }).winProb);
+    for (let k = 0; k < P; k++) probs.push(settleBattle(world, id, 1, { placements: randomPlacement(sc, k), enemyPower, rules: extraRules }).winProb);
     const won = diffs.map((d) => (100 * probs.filter((p) => p >= DIFFICULTIES[d].threshold).length) / P);
     probs.sort((a, b) => a - b);
     return `${won.map(f).join("")}      p range ${probs[0]}-${probs.at(-1)}  median ${probs[Math.floor(P / 2)]}`;
@@ -211,7 +213,7 @@ if (args.includes("--settle")) {
   const symRow = (team: string[], enemyPower: number) => {
     const probs: number[] = [];
     for (let k = 0; k < P; k++) {
-      const m = symmetricMirror(team, k, {});
+      const m = symmetricMirror(team, k, extraRules);
       probs.push(settleBattle(m.world, m.id, 1, { rules: m.rules, enemyPower }).winProb);
     }
     const won = diffs.map((d) => (100 * probs.filter((p) => p >= DIFFICULTIES[d].threshold).length) / P);

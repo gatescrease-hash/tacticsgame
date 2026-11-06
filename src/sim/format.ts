@@ -58,7 +58,8 @@ export function describeEvent(e: BattleEvent, units: Map<number, UnitSnapshot>, 
     case "knockout":
       return `${name(e.uid)} is knocked out by ${name(e.by)}!`;
     case "decide":
-      return `  [AI ${name(e.uid)}] ${e.candidates.map((c) => `${c.label}=${c.score}`).join(" | ")}`;
+      // A commitment tag ("[engage 5] ", "[forced] ") leads the chosen label.
+      return `  [AI ${name(e.uid)}] ${e.chosen.match(/^\[[^\]]*\] /)?.[0] ?? ""}${e.candidates.map((c) => `${c.label}=${c.score}`).join(" | ")}`;
     case "end":
       return e.winner === "draw" ? `Draw (${e.reason}).` : `${e.winner === "player" ? "Player" : "Enemy"} side wins.`;
   }

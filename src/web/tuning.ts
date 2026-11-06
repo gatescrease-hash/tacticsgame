@@ -62,6 +62,15 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    name: "Commitment",
+    note: "Units pick a tactic and stick to it: no ping-ponging, no hovering forever.",
+    fields: [
+      num("rules.commit", "Commit (steps)", R.commit, 0, 10, 1, "Backing off lasts this many steps; advancing lasts until the unit attacks (max 4x). 0 = off."),
+      num("rules.commitBreak", "Break if hurt %", R.commitBreak, 1, 100, 5, "Losing this much max HP since committing frees the unit to rethink."),
+      num("rules.retreatLimit", "Retreat clock (ticks)", R.retreatLimit, 0, 1000, 10, "After this long without acting or closing in, a unit must charge until it attacks. 0 = off."),
+    ],
+  },
+  {
     name: "AI weights",
     note: "Every unit starts here; traits (brave, cowardly...) add on top.",
     fields: [

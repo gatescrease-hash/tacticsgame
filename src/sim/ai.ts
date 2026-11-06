@@ -42,6 +42,8 @@ interface Ctx {
   threats: { e: Unit; exp: number; reach: number; melee: boolean; climb: number }[];
   /** Squad focus-fire target (rules.focusFire, player side). */
   focus: Unit | null;
+  /** Walking-distance field to a commitment target (cached). */
+  field?: { uid: number; cost: Int32Array };
 }
 
 /** The squad's shared target: the enemy nearest the squad's centre, weakest first on ties. */
@@ -96,6 +98,9 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     focus: null,
   };
   if (s.rules.nerve < 100) ctx.w.danger = idiv(ctx.w.danger * nerveScale(me, s.rules.nerve), 100);
+  // Retreat clock ran out: no more caution until this unit has attacked.
+  const forced = s.rules.retreatLimit > 0 && me.evasion >= s.rules.retreatLimit && me.intent !== "hold";
+  if (forced) ctx.w.danger = 0;
   if (s.rules.focusFire && me.side === "player") ctx.focus = squadFocus(ctx.allies, ctx.enemies);
   if (me.committed !== null && !s.units[me.committed]?.alive) me.committed = null;
   // Shared threat picture for this decision: what each enemy could do to me before my next turn.
@@ -330,14 +335,63 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     }
   }
 
+  // Commitment: only options that keep to the chosen tactic (if any do; otherwise it's dropped).
+  let pool = cands;
+  const posture = forced ? { kind: "engage" as const, target: me.posture?.kind === "engage" ? me.posture.target : null } : me.posture;
+  if (posture) {
+    let keep = cands.filter((c) => keepsPosture(ctx, posture.kind, posture.target, c));
+    // Engaging but the way forward is blocked (often by friends): hold and wait for a gap.
+    if (posture.kind === "engage" && !keep.some((c) => c.kind === "move")) keep = cands.filter((c) => c.kind !== "move");
+    if (keep.length > 0) pool = keep;
+    else me.posture = null;
+  }
+
   // Highest score wins; generation order breaks ties (deterministic).
-  let choice = cands[0]!;
-  for (const c of cands) if (c.score > choice.score) choice = c;
+  let choice = pool[0]!;
+  for (const c of pool) if (c.score > choice.score) choice = c;
   return { choice, candidates: cands };
 }
 
+/**
+ * Does this option keep to the unit's commitment? Acting is always fine. Engaging: every
+ * step must shorten the walk to the target, and holding is out. Repositioning: no step
+ * may bring the unit closer to the nearest enemy.
+ */
+function keepsPosture(ctx: Ctx, kind: "engage" | "reposition", targetUid: number | null, c: Choice): boolean {
+  if (c.kind === "ability") return true;
+  const { s, me } = ctx;
+  if (kind === "reposition") {
+    if (c.kind !== "move") return true;
+    const near = (p: Pos) => Math.min(...ctx.enemies.map((e) => manhattan(e.pos, p)));
+    return near(c.to) >= near(me.pos);
+  }
+  if (c.kind === "wait") return false;
+  const target = targetUid !== null && s.units[targetUid]?.alive ? s.units[targetUid]! : nearestEnemy(ctx);
+  if (!target) return true;
+  const field = walkField(ctx, target);
+  const here = field[s.grid.index(me.pos)]!;
+  if (here < 0) return true; // can't reach it on foot: anything goes
+  const there = field[s.grid.index(c.to)]!;
+  return there >= 0 && there < here;
+}
+
+function nearestEnemy(ctx: Ctx): Unit | null {
+  let best: Unit | null = null;
+  for (const e of ctx.enemies) if (!best || manhattan(e.pos, ctx.me.pos) < manhattan(best.pos, ctx.me.pos)) best = e;
+  return best;
+}
+
+/** Walking cost from every tile to `target` for this unit (ignoring other units), cached per decision. */
+function walkField(ctx: Ctx, target: Unit): Int32Array {
+  if (ctx.field?.uid === target.uid) return ctx.field.cost;
+  const { s, me } = ctx;
+  const { cost } = pathCosts(s.grid, target.pos, (from, to) => edgeCost(me, s.grid, to, from), () => true, Infinity, canLeap(me));
+  ctx.field = { uid: target.uid, cost };
+  return cost;
+}
+
 /** Back-line classes: archers, mages and healers. */
-function isFragile(u: Unit): boolean {
+export function isFragile(u: Unit): boolean {
   return u.cls.tags.some((t) => t === "ranged" || t === "caster" || t === "healer");
 }
 

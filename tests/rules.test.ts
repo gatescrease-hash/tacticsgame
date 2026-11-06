@@ -1,3 +1,4 @@
+import { pacingOf } from "../src/tools/pacing.js";
 import { describe, expect, it } from "vitest";
 import { content } from "../src/content/index.js";
 import { runBattle, type Rules } from "../src/sim/index.js";
@@ -47,5 +48,27 @@ describe("combat rules", () => {
       if (a.winner === b.winner) same++;
     }
     expect(same).toBeGreaterThan(10);
+  });
+});
+
+describe("commitment and the retreat clock", () => {
+  const cautious = { nerve: 100, advance: 0 };
+  const flips = (rules: Record<string, number>) => {
+    let n = 0;
+    for (const id of ["patrol", "marsh"]) for (let seed = 1; seed <= 4; seed++) n += pacingOf(runBattle(content, id, seed, { rules }).log).flip;
+    return n;
+  };
+
+  it("commitment cuts ping-ponging", () => {
+    expect(flips({ ...cautious, commit: 3, retreatLimit: 0 })).toBeLessThan(flips({ ...cautious, commit: 0, retreatLimit: 0 }) / 2);
+  });
+
+  it("the retreat clock forces hovering units back in", () => {
+    let shouts = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      const log = runBattle(content, "patrol", seed, { rules: { ...cautious, commit: 0, retreatLimit: 30 } }).log;
+      shouts += log.filter((e) => e.kind === "say" && /Enough running|No more hiding|Here I come|Now or never/.test(e.text)).length;
+    }
+    expect(shouts).toBeGreaterThan(0);
   });
 });

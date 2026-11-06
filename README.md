@@ -62,7 +62,8 @@ first blood, length; the same numbers as `npm run pacing`). Only changed values 
 this browser), and **Copy JSON** / **Paste JSON** move a set of changes around, e.g. to paste back
 into a chat so the values can become the new defaults. Rule keys map 1:1 onto `Rules`
 (`src/sim/state.ts`); new rules: `moveScale`, `waitCost`, `impatience`, `pressureStart`,
-`pressureSpan`, `doctrinePush`, `baseWeights` (previously hard-coded, same defaults).
+`pressureSpan`, `doctrinePush`, `baseWeights` (previously hard-coded, same defaults), and the
+**Commitment** group (`commit`, `commitBreak`, `retreatLimit`).
 
 ## How the simulation works
 
@@ -196,6 +197,30 @@ All scenarios, 40 seeds each:
 |---|---|---|---|---|---|---|---|
 | before | 10% | 42% | 31% | 15% | 29% | 34% of max HP | 1.1 |
 | after | 25% | 37% | 25% | 11% | 7% | 20% of max HP | 2.3 |
+| + commitment | 29% | 35% | 19% | 13% | 6% | 19% of max HP | 3.1 |
+
+**Commitment and the retreat clock** (second pass, so units have no reason to hover):
+
+| Rule | What it does |
+|---|---|
+| `commit: 3` | a unit that starts backing off (reposition) keeps it up for 3 steps and never steps closer meanwhile; a melee unit that starts advancing (engage) keeps closing on its target, by walking distance, until it attacks (at most 12 turns), never stepping back and holding only when the way is blocked. Losing 25% of max HP (`commitBreak`) or the target falling frees it to rethink. Archers, mages and healers aren't held to an advance: holding at the edge of range is their right play, and forcing it handed ranged mirror fights to whoever moved second (player median 4%). |
+| `retreatLimit: 60` | every turn that neither acts nor closes on the enemy runs a clock; after 60 ticks the unit shouts ("Enough running!") and charges with no caution and no holding until it acts. Any ability (heals too) resets it. |
+
+The debug log (`npm run battle -- <scenario> <seed> --debug`) shows each unit's commitment as
+`[engage 9]`, `[reposition 2]` or `[forced]`. With cautious settings (`nerve: 100, advance: 0`)
+commitment alone cuts ping-pong from 24% to 6% of turns. The clock rarely fires at the defaults
+(courage and forward pressure already keep units moving; ~2-7% of decisions with cautious
+settings): it is a backstop. Waits rose because a blocked engaging unit now holds instead of
+shuffling; it's most visible in the cramped foundry. Fights are ~25% shorter, and the value of a
+±30 head start (sensitivity "tempo") is now about 0 on every tuned scenario. Scenario power was
+retuned again against the run roster (see Run loop).
+
+Parity cost: the mirror fixtures in `npm run robustness -- --settle` (identical squads) got
+noisier. At +0% the share of placements settling as a player win on normal is 2 ranged 50%,
+3 mixed 40%, 3 skirm 100%, 4 mixed 70%, 5 mixed 70% (before commitment: 80 / 80 / 100 / 80 / 70);
+every small AI change reshuffles these (exact parity is decided by who acts first). All real
+scenarios still settle as wins from every placement. `--rules '{json}'` on robustness compares
+rule variants.
 
 The biggest single finding was the ping-pong: about 30% of all turns were a unit stepping back
 onto the tile it had just left, as its best "spot to act from" flipped while enemies moved. The
@@ -342,6 +367,7 @@ roster, 16 runs each:
 | 3% | 60 [41-60], 98% (runs cap at 60) | 21 [10-28], 82% |
 | 4% | 36 [24-48], 87% | 15 [10-24], 77% |
 | 5% (default) | 19 [11-28], 78% | 11 [8-16], 73% |
+| 5%, + commitment (16 runs) | 21 [7-30], 81% | 9 [6-16], 72-79% |
 
 (Before the pacing change, at 5%: 16 [12-22] 78% and 10 [6-13] 65%.)
 
@@ -356,10 +382,10 @@ hearts each time.
   Cliffside, and recruitable in runs), and two enemy harpies in Cliffside.
 - **2v2 fights are placement-fragile underneath.** Smoothed settling hides it, but the raw skirmish
   still swings hard between adjacent rows (who meets whom first). The skirmish needs a big enemy
-  nerf (-73% power).
+  nerf (-71% power).
 - **Foundry and Cliffside are hard on the starting roster** (Kesh, reckless, dives in and dies
   first; Cliffside's crossbows on a 2 m bluff punish Sela without a flyer to answer them), so they
-  carry big power cuts (+5 and +10, from +12 and +70) and their curves are bumpy.
+  carry big power cuts (0 and +33, from +12 and +70) and their curves are bumpy.
 - **Run loop balance is first-pass.** The auto-player numbers come from 24 runs per cell. Skirmish
   (2 slots) is the most common run-ender. Retrying a lost battle (design notes) isn't built yet.
 - **Scenarios represent early-run fights.** At +0% enemy strength they settle as wins on normal for

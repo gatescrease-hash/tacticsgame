@@ -1,4 +1,4 @@
-import { debugCandidates, decide } from "./ai.js";
+import { debugCandidates, decide, isFragile } from "./ai.js";
 import { advance, nextActor, openingGauge, projectTurnOrder, THRESHOLD, ticksToNextEvent } from "./clock.js";
 import { basicAttack, executeAbility, inRangeFrom } from "./combat.js";
 import { firePassives, say } from "./effects.js";
@@ -97,6 +97,9 @@ export function createUnit(content: Content, unitId: string, side: Side, uid: nu
     committed: null,
     plan: null,
     lastStep: null,
+    posture: null,
+    evasion: 0,
+    lastTurn: null,
     cache: new Map(),
   };
   const abilities: AbilityDef[] = [basicAttack(u), ...cls.abilities.map((id) => need(content.abilities, id, "ability"))];
@@ -297,6 +300,7 @@ function takeTurn(s: BattleState, u: Unit): void {
   firePassives(s, u, "onTurnStart");
   if (!u.alive) return;
   updateIntent(s, u);
+  tickCommitment(s, u);
 
   // Stride: keep walking an existing plan without re-deciding, unless something changed.
   if (u.plan) {
@@ -310,10 +314,12 @@ function takeTurn(s: BattleState, u: Unit): void {
     u.plan = null;
   }
 
+  const posture = u.posture ? `[${u.posture.kind} ${u.posture.steps}] ` : s.rules.retreatLimit > 0 && u.evasion >= s.rules.retreatLimit ? "[forced] " : "";
   const { choice, candidates } = decide(s, u);
-  if (s.opts.debug) emit(s, { t: s.t, kind: "decide", uid: u.uid, chosen: choice.label, candidates: debugCandidates(candidates) });
+  if (s.opts.debug) emit(s, { t: s.t, kind: "decide", uid: u.uid, chosen: posture + choice.label, candidates: debugCandidates(candidates) });
 
   u.idle = choice.kind === "wait" ? u.idle + 1 : choice.reason === "retreat" ? u.idle : 0;
+  afterChoice(s, u, choice);
   switch (choice.kind) {
     case "ability":
       if (choice.reason !== "attack") say(s, u, choice.reason);
@@ -338,6 +344,56 @@ function takeTurn(s: BattleState, u: Unit): void {
       emit(s, { t: s.t, kind: "wait", uid: u.uid, cost: waitCost });
       return;
   }
+}
+
+function nearestDist(s: BattleState, u: Unit, p: Pos): number {
+  let best = Infinity;
+  for (const e of s.units) if (e.alive && e.side !== u.side) best = Math.min(best, manhattan(e.pos, p));
+  return best;
+}
+
+const FORCED_LINES = ["Enough running!", "No more hiding.", "Here I come!", "Now or never!"];
+
+/** Turn start: run the retreat clock and drop commitments that something unexpected broke. */
+function tickCommitment(s: BattleState, u: Unit): void {
+  if (u.lastTurn?.evasive && s.rules.retreatLimit > 0) {
+    const before = u.evasion;
+    u.evasion += s.t - u.lastTurn.t;
+    if (before < s.rules.retreatLimit && u.evasion >= s.rules.retreatLimit && u.intent !== "hold") {
+      emit(s, { t: s.t, kind: "say", uid: u.uid, text: FORCED_LINES[(s.t + u.uid) % FORCED_LINES.length]!, reason: "advance" });
+    }
+  }
+  const p = u.posture;
+  if (!p) return;
+  const lost = p.hp - u.hp;
+  const target = p.target === null ? null : s.units[p.target];
+  if (lost * 100 >= maxHp(u) * s.rules.commitBreak || (target && !target.alive)) u.posture = null;
+}
+
+/** After deciding: start, continue or finish a commitment; note whether the turn backed off. */
+function afterChoice(s: BattleState, u: Unit, choice: ReturnType<typeof decide>["choice"]): void {
+  // Backing off or hovering: any turn that neither acts nor closes on the enemy (orders to hold excepted).
+  const closes = choice.kind === "move" && nearestDist(s, u, choice.to) < nearestDist(s, u, u.pos);
+  u.lastTurn = { t: s.t, evasive: u.intent !== "hold" && choice.kind !== "ability" && !closes };
+  if (choice.kind === "ability") {
+    // Acting (healers healing included) resets the retreat clock; attacking completes an engagement.
+    u.evasion = 0;
+    if (choice.target.side !== u.side && u.posture?.kind === "engage") u.posture = null;
+    return;
+  }
+  if (u.posture) {
+    if (--u.posture.steps <= 0) u.posture = null;
+    return;
+  }
+  if (s.rules.commit <= 0 || choice.kind !== "move") return;
+  const kind = choice.reason === "retreat" ? "reposition" : "engage";
+  // Archers, mages and healers aren't held to an advance: holding at the edge of range is
+  // their right play (forcing them in hands the fight to whoever moves second). The retreat
+  // clock still stops them hovering forever.
+  if (kind === "engage" && isFragile(u)) return;
+  // Engaging lasts until the unit attacks (capped, in case it never gets there); repositioning lasts `commit` steps.
+  const steps = (kind === "engage" ? 4 * s.rules.commit : s.rules.commit) - 1;
+  if (steps > 0) u.posture = { kind, steps, hp: u.hp, target: kind === "engage" ? (choice.target?.uid ?? null) : null };
 }
 
 function doMove(s: BattleState, u: Unit, to: Pos): void {

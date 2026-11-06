@@ -90,11 +90,28 @@ export interface Rules {
   doctrinePush: number;
   /** AI weights every unit starts from; traits add on top. */
   baseWeights: Weights;
+  /**
+   * Commitment: a unit that starts backing off (reposition) keeps that up for this many
+   * steps, never stepping closer to the enemy; one that starts advancing (engage) keeps
+   * closing on its target until it attacks (at most 4x this many turns), never stepping
+   * back, holding only when the way is blocked (melee only: the back line may hold at the
+   * edge of range). 0 = off.
+   */
+  commit: number;
+  /** Losing this % of max HP since committing counts as "something unexpected" and frees the unit. */
+  commitBreak: number;
+  /**
+   * Retreat clock: after this many ticks of turns that neither act nor close on the enemy
+   * (backing off, hovering, holding without orders to) since it last acted, a unit must
+   * re-engage: no caution, no holding, straight at the enemy, until it attacks. 0 = off.
+   */
+  retreatLimit: number;
 }
 
 export const BASELINE_RULES: Rules = {
   unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: false, playerHold: 0, actionScale: 100, nerve: 100, advance: 0,
   moveScale: 100, waitCost: 50, impatience: 20, pressureStart: 300, pressureSpan: 300, doctrinePush: 2, baseWeights: DEFAULT_WEIGHTS,
+  commit: 0, commitBreak: 25, retreatLimit: 0,
 };
 
 /**
@@ -103,10 +120,13 @@ export const BASELINE_RULES: Rules = {
  * points and made every difficulty curve monotonic (see README "Sensitivity").
  * Pacing (actionScale 60 with hpScale 250, nerve, advance) was chosen with `npm run pacing`:
  * more, smaller actions and units that press forward instead of hovering at the edge of reach.
+ * Commitment (commit 3) and the retreat clock (retreatLimit 60) make units pick a tactic and
+ * stick to it, and stop anyone backing off forever.
  */
 export const DEFAULT_RULES: Rules = {
   unitStreams: true, hpScale: 250, damageSpread: 20, charge: true, underdog: 10, luck: "meter", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: true, playerHold: 0, actionScale: 60, nerve: 40, advance: 6,
   moveScale: 100, waitCost: 50, impatience: 20, pressureStart: 300, pressureSpan: 300, doctrinePush: 2, baseWeights: DEFAULT_WEIGHTS,
+  commit: 3, commitBreak: 25, retreatLimit: 60,
 };
 
 export interface BattleOptions {

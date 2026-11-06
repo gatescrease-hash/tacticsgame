@@ -394,6 +394,15 @@ export interface Unit {
   plan: { dest: Pos; steps: number; hp: number; reason: Reason } | null;
   /** The tile this unit last stepped off, and its HP then (rules.advance: no ping-ponging). Cleared by holding. */
   lastStep: { from: Pos; hp: number } | null;
+  /**
+   * Commitment (rules.commit): the tactic this unit is sticking with for a few steps.
+   * engage = closing on `target`; reposition = backing away from the enemy.
+   */
+  posture: { kind: "engage" | "reposition"; steps: number; hp: number; target: number | null } | null;
+  /** Retreat clock (rules.retreatLimit): ticks spent backing off or holding since it last acted. */
+  evasion: number;
+  /** When this unit's previous turn was, and whether it backed off or held. */
+  lastTurn: { t: number; evasive: boolean } | null;
   /** Bounded-luck meters per roll stage (rules.luck = "meter"). */
   meters: Record<string, number>;
   /** Consecutive turns spent holding. Impatience: waiting erodes caution so standoffs break. */
