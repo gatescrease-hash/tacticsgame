@@ -8,7 +8,7 @@
  * are settled (src/sim/settle.ts). Losing costs hearts by how badly it went;
  * at 0 hearts the run is over. After each battle you pick one reward.
  */
-import { Rng, settleBattle, type Content, type Difficulty, type Modifier, type Pos, type SettleResult, type StatName } from "../sim/index.js";
+import { Rng, settleBattle, type BattleOptions, type Content, type Difficulty, type Modifier, type Pos, type SettleOptions, type SettleResult, type StatName } from "../sim/index.js";
 
 export interface RunConfig {
   /** Encounters to draw from, cycled in a shuffled order. */
@@ -180,7 +180,15 @@ export interface FightResult {
 }
 
 /** Settle the current encounter for a deployment. Doesn't change the run; call `applyResult`. */
-export function fight(content: Content, run: RunState, deployed: string[], anchor?: Pos, showSeed = 1, extra: { recordQueue?: boolean } = {}): FightResult {
+export function fight(
+  content: Content,
+  run: RunState,
+  deployed: string[],
+  anchor?: Pos,
+  showSeed = 1,
+  extra: Omit<BattleOptions, "roster" | "anchor" | "enemyPower"> = {},
+  settleOverrides: Pick<SettleOptions, "threshold" | "marginPercentile" | "smoothPlacement"> = {},
+): FightResult {
   if (run.over || run.offers) throw new Error("not ready to fight");
   const enc = currentEncounter(content, run);
   if (deployed.length < 1 || deployed.length > enc.slots) throw new Error(`deploy 1-${enc.slots} units`);
@@ -193,8 +201,8 @@ export function fight(content: Content, run: RunState, deployed: string[], ancho
     content,
     enc.scenario,
     showSeed,
-    { roster, ...(anchor ? { anchor } : {}), enemyPower: enc.enemyPower, ...extra },
-    { difficulty: run.config.difficulty, samples: run.config.samples },
+    { ...extra, roster, ...(anchor ? { anchor } : {}), enemyPower: enc.enemyPower },
+    { ...settleOverrides, difficulty: run.config.difficulty, samples: run.config.samples },
   );
   const result = settle.result;
   const won = result.winner === "player";

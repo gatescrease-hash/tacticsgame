@@ -6,7 +6,7 @@ import { arrangeFormation } from "./formation.js";
 import { Grid, firstStep, manhattan, pathCosts } from "./grid.js";
 import { Rng } from "./rng.js";
 import { idiv } from "./math.js";
-import { DEFAULT_RULES, emit, type BattleOptions, type BattleState, type Rules } from "./state.js";
+import { DEFAULT_RULES, DEFAULT_WEIGHTS, emit, type BattleOptions, type BattleState, type Rules } from "./state.js";
 import { updateStatuses } from "./statuses.js";
 import { maxHp } from "./stats.js";
 import { canLeap, edgeCost } from "./movement.js";
@@ -23,11 +23,10 @@ export interface BattleResult {
   units: Unit[];
 }
 
-const WAIT_COST = 50;
 /** Ticks the player's squad will hold before advancing anyway (rules.playerHold). */
 const PLAYER_HOLD_LIMIT = 150;
 
-export const DEFAULT_WEIGHTS: Weights = { damage: 10, kill: 8, danger: 3, support: 8, aoe: 8, tempo: 10, aggression: 10 };
+export { DEFAULT_WEIGHTS };
 
 function need<T>(table: Record<string, T>, id: string, what: string): T {
   const v = table[id];
@@ -155,6 +154,13 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
       u.staticMods.push({ key: "hp", op: "pct", value: opts.enemyPower }, { key: "damageDealt", op: "pct", value: opts.enemyPower });
     }
     if (rules.hpScale !== 100) u.staticMods.push({ key: "hp", op: "pct", value: rules.hpScale - 100 });
+    if (rules.moveScale !== 100) u.staticMods.push({ key: "moveCost", op: "pct", value: rules.moveScale - 100 });
+    // Base AI weights: shift every unit by the difference from the defaults (traits stay on top).
+    if (rules.baseWeights !== DEFAULT_WEIGHTS) {
+      for (const k of Object.keys(DEFAULT_WEIGHTS) as (keyof Weights)[]) {
+        u.weights[k] = Math.max(0, u.weights[k] + (rules.baseWeights[k] ?? DEFAULT_WEIGHTS[k]) - DEFAULT_WEIGHTS[k]);
+      }
+    }
     if (rules.actionScale !== 100) u.abilities = u.abilities.map((a) => scaledAbility(a, rules.actionScale));
     u.cache.clear();
     u.hp = maxHp(u);
@@ -327,7 +333,7 @@ function takeTurn(s: BattleState, u: Unit): void {
     case "wait":
       // Holding breaks momentum: next turn the unit may go back the way it came.
       u.lastStep = null;
-      const waitCost = idiv(WAIT_COST * s.rules.actionScale, 100);
+      const waitCost = Math.max(1, idiv(s.rules.waitCost * s.rules.actionScale, 100));
       u.gauge -= waitCost;
       emit(s, { t: s.t, kind: "wait", uid: u.uid, cost: waitCost });
       return;

@@ -3,7 +3,7 @@ import { affected, basicAttack, elevationPct, inRangeFrom, isRangedAbility, type
 import { computePacket, powerOf } from "./damage.js";
 import { firstStep, manhattan, pathCosts } from "./grid.js";
 import { idiv } from "./math.js";
-import { alliesOf, enemiesOf, type BattleState } from "./state.js";
+import { alliesOf, DEFAULT_RULES, enemiesOf, type BattleState, type Rules } from "./state.js";
 import { hasStatus, hasStatusTag, maxHp, stat } from "./stats.js";
 import { canLeap, edgeCost, isFlyer, jumpOf } from "./movement.js";
 import type { CandidateDebug } from "./log.js";
@@ -61,19 +61,17 @@ function squadFocus(allies: Unit[], enemies: Unit[]): Unit | null {
   return best;
 }
 
-const PRESSURE_START = 300;
-const PRESSURE_SPAN = 300;
-
 /** Statuses bend personality: fear makes safety loom large; frenzy forgets it. */
-export function effectiveWeights(u: Unit, t = 0, doctrine?: Doctrine): Weights {
+export function effectiveWeights(u: Unit, t = 0, doctrine?: Doctrine, rules: Pick<Rules, "pressureStart" | "pressureSpan" | "impatience" | "doctrinePush"> = DEFAULT_RULES): Weights {
   const w = { ...u.weights };
   // Commander orders: an advancing squad presses a little harder. (Careful: in mirror
   // matches the side that walks into range first loses, so keep this mild.)
-  if (doctrine && u.side === "enemy" && doctrine.kind !== "hold") w.aggression += 2;
+  if (doctrine && u.side === "enemy" && doctrine.kind !== "hold") w.aggression += rules.doctrinePush;
   // Battle pressure: after a while caution decays for everyone, so endless chases and kiting end.
-  if (t > PRESSURE_START) w.danger = idiv(w.danger * Math.max(0, PRESSURE_SPAN - (t - PRESSURE_START)), PRESSURE_SPAN);
+  const span = Math.max(1, rules.pressureSpan);
+  if (t > rules.pressureStart) w.danger = idiv(w.danger * Math.max(0, span - (t - rules.pressureStart)), span);
   // Impatience: every turn spent holding erodes caution, so standoffs end.
-  if (u.idle > 0 && u.intent !== "hold") w.danger = idiv(w.danger * Math.max(0, 10 - 2 * u.idle), 10);
+  if (u.idle > 0 && u.intent !== "hold") w.danger = idiv(w.danger * Math.max(0, 100 - rules.impatience * u.idle), 100);
   if (hasStatusTag(u, "fear")) {
     w.danger *= 3;
     w.aggression = idiv(w.aggression, 3);
@@ -90,7 +88,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
   const ctx: Ctx = {
     s,
     me,
-    w: effectiveWeights(me, s.t, s.scenario.doctrine),
+    w: effectiveWeights(me, s.t, s.scenario.doctrine, s.rules),
     enemies: enemiesOf(s, me),
     allies: alliesOf(s, me),
     dangerCache: new Map(),

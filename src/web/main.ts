@@ -9,6 +9,8 @@ import { content, scenarioIds } from "../content/index.js";
 import { describeEvent, previewTurnOrder, type BattleEvent, type BattleLog, type Difficulty, type Pos, type UnitSnapshot } from "../sim/index.js";
 import type { BakeRequest, BakeResponse } from "./bake.worker.js";
 import { Battle3D } from "./render3d.js";
+import { describePacing, pacingOf } from "../tools/pacing.js";
+import { duration, enemyPower, maxTicks, mountTuning, rawMode, runConfig, samples, settleOverrides, tunedRules } from "./tuning.js";
 import {
   applyResult,
   battlesWon,
@@ -33,6 +35,8 @@ const fightBtn = $<HTMLButtonElement>("fight");
 const runBtn = $<HTMLButtonElement>("run-start");
 const pauseBtn = $<HTMLButtonElement>("pause");
 const backBtn = $<HTMLButtonElement>("back");
+const againBtn = $<HTMLButtonElement>("again");
+const pacingEl = $<HTMLParagraphElement>("pacing");
 const canvas = $<HTMLCanvasElement>("board");
 const stage3d = $<HTMLDivElement>("stage3d");
 const viewSel = $<HTMLSelectElement>("view");
@@ -230,6 +234,8 @@ function showSetup() {
   showPanel("setup-panel");
   pauseBtn.hidden = true;
   backBtn.hidden = true;
+  againBtn.hidden = true;
+  pacingEl.hidden = true;
   fightBtn.hidden = false;
   runBtn.hidden = false;
   scenarioSel.parentElement!.hidden = false;
@@ -302,7 +308,7 @@ function renderRoster() {
 }
 
 function opts() {
-  return { placements: setup.placements, benched: [...setup.benched] };
+  return { placements: setup.placements, benched: [...setup.benched], rules: tunedRules(), enemyPower: enemyPower(), maxTicks: maxTicks() };
 }
 
 function refreshPreview() {
@@ -398,9 +404,6 @@ interface Bubble { uid: number; text: string; until: number }
 interface Line { a: number; b: number; color: string; until: number }
 
 /** How long each event holds the stage at 1x, in ms. */
-const DURATION: Partial<Record<BattleEvent["kind"], number>> = {
-  move: 200, push: 200, ability: 220, hit: 380, heal: 300, dot: 260, knockout: 450, say: 120, status: 60, gauge: 120, wait: 90,
-};
 
 let play: {
   log: BattleLog;
@@ -447,19 +450,40 @@ viewSel.addEventListener("change", () => {
   }
 });
 
-fightBtn.addEventListener("click", () => {
-  fightBtn.disabled = true;
-  fightBtn.textContent = "Baking…";
+let baking = false;
+
+function bake() {
+  if (baking) return;
+  baking = true;
+  fightBtn.disabled = againBtn.disabled = true;
+  fightBtn.textContent = againBtn.textContent = "Baking…";
+  const difficulty = difficultySel.value as Difficulty;
   const req: BakeRequest =
     mode === "run" && run
-      ? { kind: "run", run, deployed: runDeployed, anchor: runAnchor, seed: Number(seedInput.value) }
-      : { kind: "single", scenario: setup.scenarioId, seed: Number(seedInput.value), difficulty: difficultySel.value as Difficulty, opts: opts() };
+      ? { kind: "run", run, deployed: runDeployed, anchor: runAnchor, seed: Number(seedInput.value), rules: tunedRules(), maxTicks: maxTicks(), settle: settleOverrides(run.config.difficulty) }
+      : { kind: "single", scenario: setup.scenarioId, seed: Number(seedInput.value), difficulty, opts: opts(), raw: rawMode(), samples: samples(), settle: settleOverrides(difficulty) };
   worker.postMessage(req);
-});
+}
+
+fightBtn.addEventListener("click", bake);
+againBtn.addEventListener("click", bake);
+
+// Enter in a tuning field fights again (single battles, from the setup or a battle in progress).
+mountTuning(
+  $("tuning"),
+  () => {
+    if (mode === "single" && (screen === "setup" || screen === "battle")) bake();
+  },
+  () => {
+    if (screen === "setup") refreshPreview();
+  },
+);
 
 worker.onmessage = (ev: MessageEvent<BakeResponse>) => {
-  fightBtn.disabled = false;
+  baking = false;
+  fightBtn.disabled = againBtn.disabled = false;
   fightBtn.textContent = "Fight!";
+  againBtn.textContent = "Fight again";
   pendingRecord = ev.data.record ?? null;
   startPlayback(ev.data);
 };
@@ -497,16 +521,23 @@ function startPlayback(bake: BakeResponse) {
   pauseBtn.textContent = "Pause";
   backBtn.hidden = false;
   backBtn.textContent = mode === "run" ? "Skip to result" : "Back to setup";
+  againBtn.hidden = mode === "run";
   fightBtn.hidden = true;
   runBtn.hidden = true;
   scenarioSel.disabled = true;
   banner.hidden = true;
   logEl.replaceChildren();
   // Prototype transparency: show how the result was settled.
+  const result = bake.winner === "player" ? "win" : bake.winner === "draw" ? "draw" : "loss";
   hint.textContent =
-    `Your setup won ${bake.winProb}% of ${bake.samples} simulated battles; on ${difficultySel.value} that settles as a ` +
-    `${bake.winner === "player" ? "win" : "loss"}. Showing one of those battles (simulated in ${bake.ms.toFixed(0)} ms). ` +
-    `Change the seed to watch a different one with the same result.`;
+    bake.winProb < 0
+      ? `Raw battle: seed ${seedInput.value} exactly as simulated, no settling (${bake.ms.toFixed(0)} ms): a ${result}. Another seed may go the other way.`
+      : `Your setup won ${bake.winProb}% of ${bake.samples} simulated battles; on ${mode === "run" && run ? run.config.difficulty : difficultySel.value} that settles as a ` +
+        `${result}. Showing one of those battles (simulated in ${bake.ms.toFixed(0)} ms). ` +
+        `Change the seed to watch a different one with the same result.`;
+  // How this battle looks, for comparing tuning changes.
+  pacingEl.hidden = false;
+  pacingEl.textContent = `Pacing: ${describePacing(pacingOf(log))}`;
   sizeCanvas(start.width, start.height);
   const units = new Map<number, PUnit>(
     start.units.map((u) => [u.uid, { ...u, x: u.pos.x, y: u.pos.y, from: u.pos, to: u.pos, moveStart: 0, moveEnd: 0, alive: true, statuses: new Map() }]),
@@ -534,7 +565,7 @@ function frame(now: number) {
   while (!p.paused && p.idx < p.log.length && now >= p.nextAt) {
     const e = p.log[p.idx]!;
     applyEvent(e, now);
-    p.nextAt = now + (DURATION[e.kind] ?? 0) / speed();
+    p.nextAt = now + duration(e.kind) / speed();
     p.idx++;
   }
   updatePositions(now);
@@ -562,7 +593,7 @@ function applyEvent(e: BattleEvent, now: number) {
       x.from = { x: x.x, y: x.y };
       x.to = e.to;
       x.moveStart = now;
-      x.moveEnd = now + (DURATION.move ?? 200) / sp;
+      x.moveEnd = now + duration(e.kind) / sp;
       if (e.kind === "push") float(e.uid, "pushed", "#ccc");
       break;
     }
@@ -714,7 +745,7 @@ let runAnchor: Pos | null = null;
 let pendingRecord: BattleRecord | null = null;
 
 runBtn.addEventListener("click", () => {
-  run = newRun(Number(seedInput.value) || 1, { difficulty: difficultySel.value as Difficulty });
+  run = newRun(Number(seedInput.value) || 1, { difficulty: difficultySel.value as Difficulty, ...runConfig() });
   showRunSetup();
 });
 
@@ -727,6 +758,8 @@ function showRunSetup() {
   showPanel("run-panel");
   pauseBtn.hidden = true;
   backBtn.hidden = true;
+  againBtn.hidden = true;
+  pacingEl.hidden = true;
   fightBtn.hidden = false;
   runBtn.hidden = true;
   scenarioSel.parentElement!.hidden = true;
@@ -858,7 +891,7 @@ function showRunResult() {
     $("result-title").textContent = `Run over: ${battlesWon(run)} battles won of ${run.history.length}`;
     const again = Object.assign(document.createElement("button"), { textContent: "Start a new run" });
     again.addEventListener("click", () => {
-      run = newRun((Number(seedInput.value) || 1) + run!.history.length, { difficulty: difficultySel.value as Difficulty });
+      run = newRun((Number(seedInput.value) || 1) + run!.history.length, { difficulty: difficultySel.value as Difficulty, ...runConfig() });
       showRunSetup();
     });
     const leave = Object.assign(document.createElement("button"), { textContent: "Back to single battles", className: "secondary" });

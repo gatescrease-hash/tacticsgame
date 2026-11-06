@@ -51,6 +51,9 @@ export interface SettleOptions {
    * can't flip it. The battle shown is preferably one formed up exactly where chosen.
    */
   smoothPlacement?: boolean;
+  /** Override the difficulty's threshold (min player win %) and shown-battle margin percentile. */
+  threshold?: number;
+  marginPercentile?: number;
 }
 
 /** Squad shifts cycled through by the samples: the chosen spot first, then its 8 neighbours. */
@@ -116,7 +119,9 @@ export function settleBattle(
   opts: BattleOptions = {},
   settle: SettleOptions = {},
 ): SettleResult {
-  const diff = DIFFICULTIES[settle.difficulty ?? "normal"];
+  const diff = { ...DIFFICULTIES[settle.difficulty ?? "normal"] };
+  if (settle.threshold !== undefined) diff.threshold = settle.threshold;
+  if (settle.marginPercentile !== undefined) diff.marginPercentile = settle.marginPercentile;
   const n = Math.max(1, settle.samples ?? 24);
   const samples = sampleSetup(content, scenarioId, opts, n, settle.smoothPlacement ?? true);
   const wins = samples.filter((x) => x.winner === "player").length;

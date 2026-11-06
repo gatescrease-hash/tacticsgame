@@ -47,6 +47,23 @@ harpies), `duel`, `skirmish`, `patrol` (Arago militia, textbook formation), `fou
 automatons: fire and minds don't work), `marsh` (lizardfolk ambush plus mudlings that water
 dissolves), `wolves` (a pack that goes for stragglers).
 
+## Tuning panel
+
+Under the board, **Tuning** exposes every balance dial the browser can reach, each showing its
+default (read from the sim's own constants) with a ↺ reset: pacing (action cost, HP, move cost,
+hold cost, damage spread), courage and aggression (nerve, forward pressure, impatience, battle
+pressure, enemy push, player hold), the base AI weights every unit starts from, team play
+(formation, focus fire, commitment, stride, cohesion), fairness and luck, enemy power and timeout,
+settling (settled vs **raw** single-seed battles, samples, per-difficulty thresholds and shown
+margin), run ramp and hearts, and playback timing per event. Changes apply to the next Fight;
+Enter in a field (or **Fight again** during a battle) re-bakes at once. After each battle a
+**Pacing** line summarises how it looked (turn mix, ping-pong, average hit, actions per unit,
+first blood, length; the same numbers as `npm run pacing`). Only changed values are stored (in
+this browser), and **Copy JSON** / **Paste JSON** move a set of changes around, e.g. to paste back
+into a chat so the values can become the new defaults. Rule keys map 1:1 onto `Rules`
+(`src/sim/state.ts`); new rules: `moveScale`, `waitCost`, `impatience`, `pressureStart`,
+`pressureSpan`, `doctrinePush`, `baseWeights` (previously hard-coded, same defaults).
+
 ## How the simulation works
 
 ```

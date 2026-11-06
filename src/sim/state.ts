@@ -1,7 +1,10 @@
 import type { Grid } from "./grid.js";
 import type { BattleEvent, BattleLog } from "./log.js";
 import type { Rng } from "./rng.js";
-import type { Content, Modifier, Pos, ScenarioDef, Side, Unit } from "./types.js";
+import type { Content, Modifier, Pos, ScenarioDef, Side, Unit, Weights } from "./types.js";
+
+/** Every unit's AI weights before its traits are added (rules.baseWeights). */
+export const DEFAULT_WEIGHTS: Weights = { damage: 10, kill: 8, danger: 3, support: 8, aoe: 8, tempo: 10, aggression: 10 };
 
 /**
  * Global combat rules. These are the knobs tested by `npm run sensitivity`
@@ -73,10 +76,25 @@ export interface Rules {
   nerve: number;
   /** Until it has something in reach, each step toward the nearest enemy is worth this much (and each step away costs it). 0 = off. */
   advance: number;
+  /** Percent scale on every unit's movement cost per tile. Lower = units cover ground faster. */
+  moveScale: number;
+  /** Gauge a unit spends holding (before actionScale). */
+  waitCost: number;
+  /** Impatience: percent of caution lost per turn spent holding without orders to hold. */
+  impatience: number;
+  /** Battle pressure: from this tick, caution decays for everyone... */
+  pressureStart: number;
+  /** ...reaching zero this many ticks later, so endless chases and kiting end. */
+  pressureSpan: number;
+  /** Extra aggression for an enemy squad with orders to advance (doctrine). */
+  doctrinePush: number;
+  /** AI weights every unit starts from; traits add on top. */
+  baseWeights: Weights;
 }
 
 export const BASELINE_RULES: Rules = {
   unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: false, playerHold: 0, actionScale: 100, nerve: 100, advance: 0,
+  moveScale: 100, waitCost: 50, impatience: 20, pressureStart: 300, pressureSpan: 300, doctrinePush: 2, baseWeights: DEFAULT_WEIGHTS,
 };
 
 /**
@@ -88,6 +106,7 @@ export const BASELINE_RULES: Rules = {
  */
 export const DEFAULT_RULES: Rules = {
   unitStreams: true, hpScale: 250, damageSpread: 20, charge: true, underdog: 10, luck: "meter", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: true, playerHold: 0, actionScale: 60, nerve: 40, advance: 6,
+  moveScale: 100, waitCost: 50, impatience: 20, pressureStart: 300, pressureSpan: 300, doctrinePush: 2, baseWeights: DEFAULT_WEIGHTS,
 };
 
 export interface BattleOptions {

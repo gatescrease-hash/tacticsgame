@@ -24,6 +24,7 @@
             <option value="1">1x</option>
             <option value="2" selected>2x</option>
             <option value="4">4x</option>
+            <option value="8">8x</option>
           </select>
         </label>
         <label>View
@@ -35,6 +36,7 @@
         <button id="fight">Fight!</button>
         <button id="run-start" class="secondary" title="Start a roguelike run with the chosen difficulty and seed">Start run</button>
         <button id="pause" class="secondary" hidden>Pause</button>
+        <button id="again" hidden title="Re-bake this battle with the current tuning (or press Enter in a tuning field)">Fight again</button>
         <button id="back" class="secondary" hidden>Back to setup</button>
       </div>
     </header>
@@ -43,6 +45,18 @@
         <div id="turnbar" class="turnbar" aria-label="Turn order"></div>
         <div class="board-wrap"><canvas id="board"></canvas><div id="stage3d" class="stage3d" hidden></div><div id="banner" class="banner" hidden></div></div>
         <p id="hint" class="hint"></p>
+        <p id="pacing" class="hint pacing" hidden></p>
+        <details id="tuning" class="tuning">
+          <summary>Tuning <span class="meta" data-count></span></summary>
+          <p class="tnote">Defaults come from the current balance; ↺ shows the default and resets to it. Changes apply to the next Fight (press Enter in a field to fight again). Saved in this browser.</p>
+          <div class="ttools">
+            <button type="button" class="secondary" data-reset>Reset all</button>
+            <button type="button" class="secondary" data-copy>Copy JSON</button>
+            <button type="button" class="secondary" data-paste>Paste JSON</button>
+          </div>
+          <p class="tnote" data-status></p>
+          <div data-groups></div>
+        </details>
       </section>
       <aside class="side">
         <div id="setup-panel">
