@@ -367,9 +367,32 @@ Findings:
 sunken water, thicket bushes), an orbit/pitch/zoom camera, and low-poly units built from primitives
 per class and race (knights with shield and helmet, archers with bows, mages in pointy hats, wolves
 on four legs, golems, steam automatons, mud blobs). Animations: idle bob and sway, hops between
-tiles, turning to face, melee lunges, projectiles for ranged attacks and spells, ring pulses for area
-abilities, hit flashes and dodge wobbles, heal sparkles, knockouts that topple and sink. Text
-(damage numbers, speech bubbles, status tags) is an HTML overlay so it stays crisp.
+tiles, turning to face, ring pulses for area abilities, heal sparkles, knockouts that topple and
+sink. Text (damage numbers, speech bubbles, status tags) is an HTML overlay so it stays crisp.
+
+**Attack deforms** (no rigs): the whole model squashes, stretches, leans, twists and lunges through
+a wind-up (to 35% of the attack) and a strike (peaking at 50%, timed to land with the hit event).
+The style comes from the ability and weapon (`attackStyle` in `sound.ts`): **slash** (swords: coil
+and whip round), **thrust** (spears, daggers: draw back, long stretched jab), **smash** (maces, fists,
+crushing blows: rear up, slam down wide, dust ring), **pounce** (fangs, talons, dive: crouch and leap),
+**shoot** (bows, crossbows, javelins: lean into the draw, recoil; an arrow flies a shallow arc,
+nose first), **cast** (spells: rise, twirl and glow, then an orb with a trail), **support** (heals,
+buffs: rise glowing), **shout** (war cry: puff up, ring pulse). Ranged hits wait for the
+projectile to land. **Reactions**: damage knocks the target back and away from the attacker with
+a squash and a burst of shards (coloured by damage type; crits bigger, plus a small camera shake);
+misses and dodges are a sidestep; parries and blocks throw sparks and rock both fighters back.
+Knockouts kick up dust with a slight shake. **Status auras**: stun stars orbit the head; burning
+embers, poison bubbles and frenzy sparks rise; bleeding and wet drip; rallied, hasted and slowed
+show a ring at the feet.
+
+**Sound** (`src/web/sound.ts`): quiet synthesized voices (Web Audio, no files), driven by log
+events like the renderers: swings and whooshes by attack style, a bow twang, spell sounds by
+element (fire crackle, lightning zap, water, wind, a shimmer for the rest), hit thumps (crits
+louder), clinks for parries and blocks, a whoosh for misses, heal chimes, soft footsteps, a
+knockout thud, and a short win or loss jingle. Each voice is rate-limited so fast playback doesn't
+buzz. The loudest (a crit) peaks around 19% of full scale at the default volume. **Sound on/off**
+in the header (remembered per browser); volume in Tuning, Playback. Audio starts on the first
+Fight click (browsers require a gesture).
 
 It is pure presentation: it reads the same playback state as the 2D canvas plus log events as
 animation cues, so it shows whichever battle the settle step picked. three.js makes the bundle

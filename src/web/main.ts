@@ -10,7 +10,8 @@ import { createUnit, describeEvent, previewTurnOrder, stat, type BattleEvent, ty
 import type { BakeRequest, BakeResponse } from "./bake.worker.js";
 import { Battle3D } from "./render3d.js";
 import { describePacing, pacingOf } from "../tools/pacing.js";
-import { duration, enemyPower, maxTicks, mountTuning, rawMode, runConfig, samples, settleOverrides, tunedRules } from "./tuning.js";
+import { sound } from "./sound.js";
+import { duration, enemyPower, maxTicks, mountTuning, rawMode, runConfig, samples, settleOverrides, soundVolume, tunedRules } from "./tuning.js";
 import {
   applyResult,
   battlesWon,
@@ -37,6 +38,30 @@ const pauseBtn = $<HTMLButtonElement>("pause");
 const backBtn = $<HTMLButtonElement>("back");
 const againBtn = $<HTMLButtonElement>("again");
 const pacingEl = $<HTMLParagraphElement>("pacing");
+const soundBtn = $<HTMLButtonElement>("sound");
+
+// Sound on/off, remembered per browser.
+try {
+  sound.enabled = localStorage.getItem("sound") !== "off";
+} catch {
+  // storage unavailable: default on
+}
+const showSound = () => {
+  soundBtn.textContent = sound.enabled ? "Sound on" : "Sound off";
+  soundBtn.setAttribute("aria-pressed", String(sound.enabled));
+};
+showSound();
+soundBtn.addEventListener("click", () => {
+  sound.enabled = !sound.enabled;
+  try {
+    localStorage.setItem("sound", sound.enabled ? "on" : "off");
+  } catch {
+    // ignore
+  }
+  sound.volume = soundVolume();
+  sound.unlock();
+  showSound();
+});
 const canvas = $<HTMLCanvasElement>("board");
 const stage3d = $<HTMLDivElement>("stage3d");
 const viewSel = $<HTMLSelectElement>("view");
@@ -460,6 +485,9 @@ let baking = false;
 
 function bake() {
   if (baking) return;
+  // A click: the browser now lets audio start.
+  sound.volume = soundVolume();
+  sound.unlock();
   baking = true;
   fightBtn.disabled = againBtn.disabled = true;
   fightBtn.textContent = againBtn.textContent = "Baking…";
@@ -481,6 +509,7 @@ mountTuning(
     if (mode === "single" && (screen === "setup" || screen === "battle")) bake();
   },
   () => {
+    sound.volume = soundVolume();
     if (screen === "setup") refreshPreview();
   },
 );
@@ -584,6 +613,7 @@ function applyEvent(e: BattleEvent, now: number) {
   const p = play!;
   const sp = speed();
   r3d?.onEvent(e, now, sp, p);
+  sound.onEvent(e, sp, p.units);
   const u = (uid: number) => p.units.get(uid)!;
   const float = (uid: number, text: string, color: string) =>
     p.floaters.push({ uid, text, color, start: now, until: now + 900 / Math.min(sp, 2) });
@@ -640,6 +670,7 @@ function applyEvent(e: BattleEvent, now: number) {
       u(e.uid).statuses.clear();
       break;
     case "end":
+      sound.end(e.winner === "player");
       banner.hidden = false;
       banner.textContent = e.winner === "player" ? "Victory" : e.winner === "enemy" ? "Defeat" : "Draw";
       pauseBtn.hidden = true;

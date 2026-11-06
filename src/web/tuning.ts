@@ -147,7 +147,10 @@ const GROUPS: Group[] = [
   {
     name: "Playback",
     note: "Look only: pause after each event at 1x speed (ms).",
-    fields: Object.entries(DURATION_DEFAULTS).map(([k, v]) => num(`play.${k}`, k, v!, 0, 2000, 10, "")),
+    fields: [
+      num("sound.volume", "Sound volume %", 50, 0, 100, 5, "Battle sounds (the header button mutes them)."),
+      ...Object.entries(DURATION_DEFAULTS).map(([k, v]) => num(`play.${k}`, k, v!, 0, 2000, 10, "")),
+    ],
   },
 ];
 
@@ -228,6 +231,9 @@ export function runConfig() {
 }
 export function duration(kind: BattleEvent["kind"]): number {
   return FIELDS.has(`play.${kind}`) ? n(`play.${kind}`) : 0;
+}
+export function soundVolume(): number {
+  return n("sound.volume");
 }
 export function changedCount(): number {
   return Object.keys(overrides).length;

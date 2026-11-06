@@ -4,12 +4,19 @@
  * bubbles) plus battle-log events for animation cues. It never touches the sim.
  *
  * Diorama tiles with height, orbit/pitch/zoom camera, low-poly units built from
- * primitives, idle bobs, hops, lunges, projectiles, hit flashes and knockouts.
+ * primitives, idle bobs, hops, projectiles, hit flashes and knockouts.
+ *
+ * Attacks are "deform" animations, no rigs: the whole model squashes, stretches,
+ * leans, twists and lunges through a wind-up and a strike, shaped by the attack's
+ * style (slash, thrust, smash, shoot, cast, pounce, support, shout). Targets react
+ * (knockback, sidestep, block sparks), statuses get little auras, and big moments
+ * nudge the camera.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { content } from "../content/index.js";
 import type { BattleEvent, UnitSnapshot } from "../sim/index.js";
+import { abilityElement, attackStyle, type AttackStyle } from "./sound.js";
 
 export interface ViewUnit extends UnitSnapshot {
   /** Interpolated tile position. */
@@ -251,9 +258,17 @@ interface Fx {
   dispose(): void;
 }
 
+/** A timed animation on a unit (times in ms of performance.now()). */
+interface Anim {
+  start: number;
+  end: number;
+}
+
 interface UnitView {
   root: THREE.Group;
   model: THREE.Group;
+  /** Smoothed facing (the model's yaw before attack twists). */
+  facing: number;
   ring: THREE.Mesh;
   /** Soft disc on the ground under flyers. */
   shadow: THREE.Mesh;
@@ -262,11 +277,47 @@ interface UnitView {
   phase: number;
   yaw: number;
   /** Animation cues. */
-  lunge: { start: number; end: number; dir: THREE.Vector3 } | null;
-  flash: { start: number; end: number; color: THREE.Color } | null;
-  wobble: { start: number; end: number } | null;
+  action: (Anim & { style: AttackStyle; dir: THREE.Vector3; color: THREE.Color }) | null;
+  react: (Anim & { kind: "knock" | "dodge" | "block"; dir: THREE.Vector3; amp: number }) | null;
+  flash: (Anim & { color: THREE.Color }) | null;
   ko: { start: number } | null;
   materials: THREE.MeshStandardMaterial[];
+  /** Status effects shown around the unit, by status id. */
+  auras: Map<string, Aura>;
+}
+
+interface Aura {
+  kind: "orbit" | "rise" | "fall" | "ring";
+  bits: THREE.Mesh[];
+}
+
+/** Status visuals: what moves around a unit while it has the status. */
+const AURAS: Record<string, { kind: Aura["kind"]; color: number; n: number }> = {
+  stunned: { kind: "orbit", color: 0xffe066, n: 3 },
+  shaken: { kind: "orbit", color: 0xb9a6e0, n: 2 },
+  burning: { kind: "rise", color: 0xff7a2a, n: 4 },
+  poisoned: { kind: "rise", color: 0x7ddc5a, n: 3 },
+  frenzy: { kind: "rise", color: 0xe0412f, n: 3 },
+  bleeding: { kind: "fall", color: 0xb3202a, n: 3 },
+  wet: { kind: "fall", color: 0x6fc3ff, n: 3 },
+  rallied: { kind: "ring", color: 0xf2c94c, n: 1 },
+  hasted: { kind: "ring", color: 0x7fe3ff, n: 1 },
+  slowed: { kind: "ring", color: 0x5b7bd6, n: 1 },
+};
+
+/** Wind-up rises to 1 by 35% of an attack, snaps back by ~47%. */
+function windup(f: number): number {
+  return f < 0.35 ? Math.sin((f / 0.35) * Math.PI * 0.5) : Math.max(0, 1 - (f - 0.35) / 0.12);
+}
+/** Strike peaks at 50% of an attack (sharp in), then eases out. */
+function strike(f: number): number {
+  if (f < 0.35) return 0;
+  if (f < 0.5) return (f - 0.35) / 0.15;
+  return Math.max(0, 1 - (f - 0.5) / 0.5) ** 1.5;
+}
+/** Reaction envelope: sharp hit, slow settle. */
+function jolt(f: number): number {
+  return f < 0.12 ? f / 0.12 : Math.max(0, 1 - (f - 0.12) / 0.88) ** 2;
 }
 
 export class Battle3D {
@@ -283,6 +334,9 @@ export class Battle3D {
   private resize: ResizeObserver;
   private labelCache = new Map<string, HTMLDivElement>();
   private tmp = new THREE.Vector3();
+  private shake: (Anim & { amp: number }) | null = null;
+  /** When a projectile aimed at a unit lands, so its hit reaction can wait for it. */
+  private impactAt = new Map<number, number>();
 
   private metres: number[][];
 
@@ -438,6 +492,8 @@ export class Battle3D {
     const model = buildModel(u, teamColor);
     // Enemies start facing the player's side.
     const yaw = u.side === "player" ? Math.PI / 2 : -Math.PI / 2;
+    // Yaw first, then lean (pitch) and roll in the model's own frame.
+    model.rotation.order = "YXZ";
     model.rotation.y = yaw;
     root.add(model);
     const ring = new THREE.Mesh(
@@ -467,8 +523,8 @@ export class Battle3D {
       }
     });
     this.units.set(u.uid, {
-      root, model, ring, shadow, hpBack, hpFill, phase: hash(u.uid, 3) * Math.PI * 2, yaw,
-      lunge: null, flash: null, wobble: null, ko: null, materials,
+      root, model, facing: yaw, ring, shadow, hpBack, hpFill, phase: hash(u.uid, 3) * Math.PI * 2, yaw,
+      action: null, react: null, flash: null, ko: null, materials, auras: new Map(),
     });
   }
 
@@ -507,16 +563,49 @@ export class Battle3D {
         dir.normalize();
         const def = content.abilities[e.ability];
         const ranged = dist > 1.5;
-        a.lunge = { start: now, end: now + 300 / sp, dir: ranged ? dir.clone().multiplyScalar(-0.4) : dir };
-        if (ranged) this.projectile(from, to, now, 320 / sp, this.abilityColor(e.ability));
-        if (def?.shape.kind === "radius") this.pulse(to, def.shape.r, now + 250 / sp, 500 / sp, this.abilityColor(e.ability));
+        const style = attackStyle(e.ability, att.weaponId, ranged);
+        const color = new THREE.Color(this.abilityColor(e.ability));
+        const dur = (style === "cast" || style === "support" || style === "shout" ? 520 : 420) / sp;
+        a.action = { start: now, end: now + dur, style, dir, color };
+        if (ranged && e.uid !== e.target) {
+          // Released at the end of the wind-up; flight time grows with distance.
+          const launch = now + dur * 0.4;
+          const flight = Math.min(320, 70 + dist * 45) / sp;
+          if (style === "shoot") this.arrow(from, to, launch, flight);
+          else this.orb(from, to, launch, flight, color.getHex());
+          this.impactAt.set(e.target, launch + flight);
+        }
+        if (style === "smash" && !ranged) this.pulse(to, 0.35, now + dur * 0.5, 360 / sp, 0xc8b28a);
+        if (def?.shape.kind === "radius") this.pulse(to, def.shape.r, now + dur * 0.5, 500 / sp, color.getHex());
+        if (style === "shout") this.pulse(from, 1.2, now + dur * 0.3, 600 / sp, color.getHex());
         break;
       }
       case "hit": {
         const t = this.units.get(e.target);
-        if (!t) return;
-        if (e.damage > 0) t.flash = { start: now, end: now + 260 / sp, color: new THREE.Color(e.crit ? 0xff2020 : 0xff6a3a) };
-        else t.wobble = { start: now, end: now + 300 / sp };
+        const tv = view.units.get(e.target);
+        const av = view.units.get(e.uid);
+        if (!t || !tv) return;
+        // Ranged hits land when the projectile does.
+        const landing = this.impactAt.get(e.target);
+        const at = landing !== undefined && landing > now && landing - now < 700 ? landing : now;
+        const pos = this.unitWorld(tv);
+        const dir = av ? pos.clone().sub(this.unitWorld(av)).setY(0).normalize() : new THREE.Vector3(1, 0, 0);
+        const chest = pos.clone().setY(pos.y + 0.45);
+        if (e.damage > 0) {
+          const amp = e.crit ? 1.7 : 1;
+          t.flash = { start: at, end: at + 260 / sp, color: new THREE.Color(e.crit ? 0xff2020 : 0xff6a3a) };
+          t.react = { start: at, end: at + 380 / sp, kind: "knock", dir, amp };
+          this.burst(chest, this.damageColor(e.components[0]?.type), e.crit ? 14 : 7, e.crit ? 2.4 : 1.6, at, 420 / sp);
+          if (e.crit) this.shakeCamera(at, 260 / sp, 0.07);
+        } else if (e.outcome === "missed" || e.outcome === "dodged") {
+          t.react = { start: at, end: at + 320 / sp, kind: "dodge", dir, amp: e.outcome === "dodged" ? 1 : 0.5 };
+        } else {
+          // Parried, blocked, glanced off: sparks where the blow met the guard, both sides rock back.
+          t.react = { start: at, end: at + 260 / sp, kind: "block", dir, amp: 1 };
+          const a = this.units.get(e.uid);
+          if (a && av && Math.abs(av.x - tv.x) + Math.abs(av.y - tv.y) <= 1.5) a.react = { start: at, end: at + 260 / sp, kind: "block", dir: dir.clone().negate(), amp: 0.6 };
+          this.burst(chest.clone().addScaledVector(dir, -0.3), 0xfff0b0, 9, 2, at, 300 / sp);
+        }
         break;
       }
       case "heal": {
@@ -533,17 +622,47 @@ export class Battle3D {
       }
       case "status": {
         const v = view.units.get(e.uid);
-        if (v && e.on) this.sparkle(this.unitWorld(v), now, 500 / sp, e.status === "burning" ? 0xff7a2a : e.status === "wet" ? 0x6fc3ff : 0xd0b8ff);
+        if (v && e.on) this.sparkle(this.unitWorld(v), now, 500 / sp, AURAS[e.status]?.color ?? 0xd0b8ff);
         break;
       }
       case "knockout": {
         const t = this.units.get(e.uid);
+        const v = view.units.get(e.uid);
         if (t) t.ko = { start: now };
+        if (v) {
+          const p = this.unitWorld(v);
+          this.burst(p.clone().setY(p.y + 0.1), 0xb9a78a, 12, 1.2, now + 350, 600);
+          this.shakeCamera(now + 350, 220, 0.04);
+        }
         break;
       }
       default:
         break;
     }
+  }
+
+  private damageColor(type: string | undefined): number {
+    switch (type) {
+      case "fire":
+        return 0xff7a2a;
+      case "lightning":
+        return 0xfff27a;
+      case "psychic":
+        return 0xd06cff;
+      case "spirit":
+        return 0xfff6c8;
+      case "slashing":
+        return 0xffd0b0;
+      case "piercing":
+        return 0xfff0e0;
+      default:
+        return 0xe8dcc8;
+    }
+  }
+
+  private shakeCamera(start: number, dur: number, amp: number): void {
+    if (this.shake && this.shake.end > start && this.shake.amp >= amp) return;
+    this.shake = { start, end: start + dur, amp };
   }
 
   private abilityColor(id: string): number {
@@ -568,23 +687,88 @@ export class Battle3D {
     }
   }
 
-  private projectile(from: THREE.Vector3, to: THREE.Vector3, now: number, dur: number, color: number): void {
-    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), new THREE.MeshBasicMaterial({ color }));
-    const a = from.clone().setY(from.y + 0.45);
+  /** An arrow (or bolt, or javelin) on a shallow arc, nose following its flight. */
+  private arrow(from: THREE.Vector3, to: THREE.Vector3, start: number, dur: number): void {
+    const g = new THREE.Group();
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.46, 4).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x8a6a45 }));
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.11, 4).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xf2f2f2 }));
+    tip.position.z = 0.27;
+    g.add(shaft, tip);
+    g.visible = false;
+    const a = from.clone().setY(from.y + 0.5);
     const b = to.clone().setY(to.y + 0.45);
-    this.scene.add(orb);
+    const arc = 0.15 + a.distanceTo(b) * 0.06;
+    const at = (f: number) => new THREE.Vector3().lerpVectors(a, b, f).setY(a.y + (b.y - a.y) * f + Math.sin(Math.PI * f) * arc);
+    this.scene.add(g);
     this.fx.push({
-      until: now + dur,
+      until: start + dur,
       update: (t) => {
-        const f = Math.min(1, (t - now) / dur);
-        orb.position.lerpVectors(a, b, f);
-        orb.position.y += Math.sin(Math.PI * f) * 0.5;
-        orb.rotation.y += 0.3;
+        if (t < start) return;
+        const f = Math.min(1, (t - start) / dur);
+        g.visible = f < 1;
+        g.position.copy(at(f));
+        g.lookAt(at(Math.min(1, f + 0.05)));
       },
       dispose: () => {
-        this.scene.remove(orb);
-        orb.geometry.dispose();
+        this.scene.remove(g);
+        shaft.geometry.dispose();
+        tip.geometry.dispose();
       },
+    });
+  }
+
+  /** A spell: a glowing orb with a short fading trail. */
+  private orb(from: THREE.Vector3, to: THREE.Vector3, start: number, dur: number, color: number): void {
+    const parts: THREE.Mesh[] = [];
+    for (let i = 0; i < 4; i++) {
+      const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.09 * (1 - i * 0.2), 0), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 - i * 0.22 }));
+      m.visible = false;
+      this.scene.add(m);
+      parts.push(m);
+    }
+    const a = from.clone().setY(from.y + 0.6);
+    const b = to.clone().setY(to.y + 0.45);
+    this.fx.push({
+      until: start + dur,
+      update: (t) => {
+        if (t < start) return;
+        parts.forEach((m, i) => {
+          const f = Math.min(1, Math.max(0, (t - start) / dur - i * 0.07));
+          m.visible = f > 0 && t < start + dur;
+          m.position.lerpVectors(a, b, f);
+          m.position.y += Math.sin(Math.PI * f) * 0.35;
+          m.rotation.y += 0.3;
+        });
+      },
+      dispose: () => parts.forEach((m) => (this.scene.remove(m), m.geometry.dispose())),
+    });
+  }
+
+  /** Shards flying out from a point under gravity: impacts, sparks, dust. */
+  private burst(at: THREE.Vector3, color: number, n: number, speed: number, start: number, dur: number): void {
+    const bits: { m: THREE.Mesh; v: THREE.Vector3 }[] = [];
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(new THREE.TetrahedronGeometry(0.035, 0), new THREE.MeshBasicMaterial({ color, transparent: true }));
+      m.visible = false;
+      this.scene.add(m);
+      const ang = (i / n) * Math.PI * 2 + hash(i, n, Math.round(start)) * 0.8;
+      const up = 0.4 + hash(i, 7, Math.round(start)) * 0.9;
+      bits.push({ m, v: new THREE.Vector3(Math.cos(ang), up, Math.sin(ang)).multiplyScalar(speed * (0.6 + hash(i, 3) * 0.6)) });
+    }
+    this.fx.push({
+      until: start + dur,
+      update: (t) => {
+        if (t < start) return;
+        const s = (t - start) / 1000;
+        const f = Math.min(1, (t - start) / dur);
+        for (const { m, v } of bits) {
+          m.visible = true;
+          m.position.set(at.x + v.x * s, at.y + v.y * s - 4.5 * s * s, at.z + v.z * s);
+          m.rotation.x += 0.2;
+          (m.material as THREE.MeshBasicMaterial).opacity = 1 - f;
+        }
+      },
+      dispose: () => bits.forEach(({ m }) => (this.scene.remove(m), m.geometry.dispose())),
     });
   }
 
@@ -631,6 +815,181 @@ export class Battle3D {
     });
   }
 
+  /**
+   * The current attack / reaction deform of a unit: world offsets (dx, dy, dz), lean
+   * (pitch, + = forward), twist (extra yaw), roll, local scale (sx, sy, sz; z = forward)
+   * and glow (0-1).
+   */
+  private pose(u: UnitView, now: number) {
+    const p = { dx: 0, dy: 0, dz: 0, pitch: 0, twist: 0, roll: 0, sx: 1, sy: 1, sz: 1, glow: 0 };
+    const a = u.action;
+    if (a && now >= a.start && now < a.end) {
+      const f = (now - a.start) / (a.end - a.start);
+      const w = windup(f);
+      const s = strike(f);
+      const fwd = (k: number) => {
+        p.dx += a.dir.x * k;
+        p.dz += a.dir.z * k;
+      };
+      switch (a.style) {
+        case "slash":
+          // Coil the blade back, then whip round through the target.
+          p.twist = -1.1 * w + 1.25 * s;
+          p.pitch = -0.1 * w + 0.3 * s;
+          fwd(-0.08 * w + 0.4 * s);
+          break;
+        case "thrust":
+          // Draw back and compress, then a long stretched jab.
+          p.pitch = -0.12 * w + 0.18 * s;
+          p.sz = 1 - 0.18 * w + 0.45 * s;
+          p.sx = 1 + 0.08 * w - 0.1 * s;
+          fwd(-0.15 * w + 0.55 * s);
+          break;
+        case "smash":
+          // Rear up tall, then slam down wide.
+          p.sy = 1 + 0.22 * w - 0.3 * s;
+          p.sx = p.sz = 1 - 0.08 * w + 0.22 * s;
+          p.pitch = -0.3 * w + 0.45 * s;
+          p.dy = 0.12 * w;
+          fwd(0.25 * s);
+          break;
+        case "pounce": {
+          // Crouch, then leap at the target in an arc, stretched out.
+          const leap = f < 0.3 ? 0 : Math.sin(Math.min(1, (f - 0.3) / 0.5) * Math.PI);
+          p.sy = 1 - 0.18 * w + 0.05 * leap;
+          p.sz = 1 + 0.3 * leap;
+          p.pitch = 0.25 * leap - 0.1 * w;
+          p.dy = 0.3 * leap;
+          fwd(0.55 * leap);
+          break;
+        }
+        case "shoot":
+          // Lean into the draw, then recoil on release.
+          p.pitch = -0.14 * w;
+          p.sz = 1 - 0.1 * w;
+          p.roll = 0.12 * w;
+          fwd(-0.15 * s);
+          break;
+        case "cast":
+          // Rise and gather (a little twirl and glow), then thrust the spell out.
+          p.dy = 0.14 * w + 0.06 * s;
+          p.sy = 1 + 0.15 * w;
+          p.twist = Math.PI * 2 * Math.min(1, f / 0.45) * (1 - s * 0.2);
+          p.pitch = 0.2 * s;
+          p.glow = Math.max(w, s);
+          fwd(0.12 * s);
+          break;
+        case "support":
+          // Rise up, glowing.
+          p.dy = 0.12 * Math.sin(Math.PI * f);
+          p.sy = 1 + 0.12 * Math.sin(Math.PI * f);
+          p.glow = Math.sin(Math.PI * f);
+          break;
+        case "shout":
+          // Puff up and bellow.
+          p.sx = p.sz = 1 + 0.18 * Math.sin(Math.PI * f);
+          p.sy = 1 + 0.1 * Math.sin(Math.PI * f);
+          p.pitch = -0.2 * Math.sin(Math.PI * f);
+          p.glow = 0.5 * Math.sin(Math.PI * f);
+          break;
+      }
+    }
+    const r = u.react;
+    if (r && now >= r.start && now < r.end) {
+      const f = (now - r.start) / (r.end - r.start);
+      if (r.kind === "knock") {
+        const k = jolt(f) * r.amp;
+        p.dx += r.dir.x * 0.16 * k;
+        p.dz += r.dir.z * 0.16 * k;
+        p.sy *= 1 - 0.14 * k;
+        p.sx *= 1 + 0.08 * k;
+        p.sz *= 1 + 0.08 * k;
+        // Rock back, away from the blow, whichever way the unit faces.
+        const away = Math.atan2(r.dir.x, r.dir.z) - u.facing;
+        p.pitch -= Math.cos(away) * 0.35 * k;
+        p.roll += Math.sin(away) * 0.35 * k;
+      } else if (r.kind === "dodge") {
+        // Sidestep out of the way and back.
+        const side = u.phase > Math.PI ? 1 : -1;
+        const k = Math.sin(Math.PI * f) * 0.32 * r.amp * side;
+        p.dx += -r.dir.z * k;
+        p.dz += r.dir.x * k;
+        p.roll += 0.25 * k;
+      } else {
+        const k = jolt(f) * 0.08 * r.amp;
+        p.dx += r.dir.x * k;
+        p.dz += r.dir.z * k;
+      }
+    }
+    return p;
+  }
+
+  /** Keep each unit's status auras in step with its statuses, and animate them. */
+  private updateAuras(u: UnitView, v: ViewUnit, t: number): void {
+    const want = v.alive && !u.ko ? v.statuses : new Map<string, string>();
+    for (const [id, aura] of u.auras) {
+      if (want.has(id)) continue;
+      for (const b of aura.bits) {
+        u.root.remove(b);
+        b.geometry.dispose();
+        (b.material as THREE.Material).dispose();
+      }
+      u.auras.delete(id);
+    }
+    for (const id of want.keys()) {
+      if (u.auras.has(id) || !AURAS[id]) continue;
+      const def = AURAS[id]!;
+      const bits: THREE.Mesh[] = [];
+      for (let i = 0; i < def.n; i++) {
+        const geo =
+          def.kind === "ring"
+            ? new THREE.RingGeometry(0.4, 0.44, 20).rotateX(-Math.PI / 2)
+            : def.kind === "orbit"
+              ? new THREE.OctahedronGeometry(0.045, 0)
+              : new THREE.TetrahedronGeometry(0.035, 0);
+        const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: def.color, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+        u.root.add(m);
+        bits.push(m);
+      }
+      u.auras.set(id, { kind: def.kind, bits });
+    }
+    for (const aura of u.auras.values()) {
+      aura.bits.forEach((m, i) => {
+        const ph = i / aura.bits.length;
+        const mat = m.material as THREE.MeshBasicMaterial;
+        switch (aura.kind) {
+          case "orbit": {
+            const ang = t * 4 + ph * Math.PI * 2;
+            m.position.set(Math.cos(ang) * 0.22, 1.08 + Math.sin(t * 6 + i) * 0.03, Math.sin(ang) * 0.22);
+            m.rotation.y = t * 5;
+            mat.opacity = 0.95;
+            break;
+          }
+          case "rise": {
+            const k = (t * 0.9 + ph) % 1;
+            const ang = ph * Math.PI * 2 + t;
+            m.position.set(Math.cos(ang) * 0.2, 0.2 + k * 0.9, Math.sin(ang) * 0.2);
+            mat.opacity = 1 - k;
+            break;
+          }
+          case "fall": {
+            const k = (t * 1.2 + ph) % 1;
+            const ang = ph * Math.PI * 2;
+            m.position.set(Math.cos(ang) * 0.16, 0.85 - k * 0.8, Math.sin(ang) * 0.16);
+            mat.opacity = 1 - k * 0.7;
+            break;
+          }
+          case "ring":
+            m.position.y = 0.03;
+            m.rotation.y = t;
+            m.scale.setScalar(1 + Math.sin(t * 3) * 0.06);
+            mat.opacity = 0.45 + Math.sin(t * 3) * 0.2;
+            break;
+        }
+      });
+    }
+  }
+
   render(now: number, view: ViewState): void {
     if (!this.ok) return;
     this.controls.update();
@@ -650,17 +1009,11 @@ export class Battle3D {
         const dz = this.world(v.x, v.y).z - u.root.position.z;
         if (Math.abs(dx) + Math.abs(dz) > 0.001) u.yaw = Math.atan2(dx, dz);
       }
-      // Lunge toward (melee) or recoil from (ranged) the target.
-      if (u.lunge && now < u.lunge.end) {
-        const f = (now - u.lunge.start) / (u.lunge.end - u.lunge.start);
-        const k = Math.sin(Math.PI * f) * 0.35;
-        x += u.lunge.dir.x * k;
-        z += u.lunge.dir.z * k;
-      }
-      if (u.wobble && now < u.wobble.end) {
-        const f = (now - u.wobble.start) / (u.wobble.end - u.wobble.start);
-        x += Math.sin(f * Math.PI * 4) * 0.12 * (1 - f);
-      }
+      // Attack and reaction deforms: offsets here, then lean / twist / stretch below.
+      const p = this.pose(u, now);
+      x += p.dx;
+      y += p.dy;
+      z += p.dz;
       const flyer = FLYERS.has(v.raceId);
       if (flyer && !u.ko) {
         // Flyers hover over the ground (or the pit) with a lazy bob; wings flap.
@@ -678,22 +1031,28 @@ export class Battle3D {
       const active = view.current === uid;
       const bob = Math.sin(t * (active ? 7 : 3.2) + u.phase);
       u.model.position.y = Math.max(0, bob) * (active ? 0.05 : 0.025);
-      u.model.scale.set(UNIT_SCALE / Math.sqrt(squash), UNIT_SCALE * squash, UNIT_SCALE / Math.sqrt(squash));
-      u.model.rotation.z = Math.sin(t * 1.7 + u.phase) * 0.04;
-      // Turn smoothly toward the current facing.
-      let d = u.yaw - u.model.rotation.y;
+      const sq = 1 / Math.sqrt(squash);
+      u.model.scale.set(UNIT_SCALE * sq * p.sx, UNIT_SCALE * squash * p.sy, UNIT_SCALE * sq * p.sz);
+      u.model.rotation.z = Math.sin(t * 1.7 + u.phase) * 0.04 + p.roll;
+      // Turn smoothly toward the current facing; attacks twist on top.
+      let d = u.yaw - u.facing;
       d = Math.atan2(Math.sin(d), Math.cos(d));
-      u.model.rotation.y += d * 0.25;
-      // Hit flash.
-      const flashing = u.flash && now < u.flash.end;
+      u.facing += d * 0.25;
+      u.model.rotation.y = u.facing + p.twist;
+      if (!u.ko) u.model.rotation.x = p.pitch;
+      // Hit flash, or a caster's glow while it works.
+      const flashing = u.flash && now >= u.flash.start && now < u.flash.end;
       for (const m of u.materials) {
         if (flashing) {
           const f = 1 - (now - u.flash!.start) / (u.flash!.end - u.flash!.start);
           m.emissive.copy(u.flash!.color).multiplyScalar(f * 0.9);
+        } else if (p.glow > 0 && u.action) {
+          m.emissive.copy(u.action.color).multiplyScalar(p.glow * 0.6);
         } else {
           m.emissive.copy(m.userData.baseEmissive as THREE.Color);
         }
       }
+      this.updateAuras(u, v, t);
       // Knockout: topple and sink away.
       if (u.ko) {
         const f = Math.min(1, (now - u.ko.start) / 700);
@@ -725,7 +1084,16 @@ export class Battle3D {
       }
       return true;
     });
+    // Camera shake: a brief, decaying jitter around the orbit position.
+    const off = new THREE.Vector3();
+    if (this.shake && now >= this.shake.start && now < this.shake.end) {
+      const f = 1 - (now - this.shake.start) / (this.shake.end - this.shake.start);
+      const a = this.shake.amp * f;
+      off.set(Math.sin(now * 0.09) * a, Math.sin(now * 0.073 + 1) * a * 0.6, Math.cos(now * 0.081) * a);
+      this.camera.position.add(off);
+    }
     this.renderer.render(this.scene, this.camera);
+    this.camera.position.sub(off);
     this.drawOverlay(now, view);
   }
 
