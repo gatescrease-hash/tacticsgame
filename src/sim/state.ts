@@ -106,12 +106,17 @@ export interface Rules {
    * re-engage: no caution, no holding, straight at the enemy, until it attacks. 0 = off.
    */
   retreatLimit: number;
+  /** Percent scale on every unit's tactics (how well it plays its role). 0 = everyone just brawls. */
+  tactics: number;
+  /** Added to the tactics of every player / enemy unit (testing what training would do). */
+  playerTactics: number;
+  enemyTactics: number;
 }
 
 export const BASELINE_RULES: Rules = {
   unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: false, playerHold: 0, actionScale: 100, nerve: 100, advance: 0,
   moveScale: 100, waitCost: 50, impatience: 20, pressureStart: 300, pressureSpan: 300, doctrinePush: 2, baseWeights: DEFAULT_WEIGHTS,
-  commit: 0, commitBreak: 25, retreatLimit: 0,
+  commit: 0, commitBreak: 25, retreatLimit: 0, tactics: 0, playerTactics: 0, enemyTactics: 0,
 };
 
 /**
@@ -126,7 +131,7 @@ export const BASELINE_RULES: Rules = {
 export const DEFAULT_RULES: Rules = {
   unitStreams: true, hpScale: 250, damageSpread: 20, charge: true, underdog: 10, luck: "meter", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: true, playerHold: 0, actionScale: 60, nerve: 40, advance: 6,
   moveScale: 100, waitCost: 50, impatience: 20, pressureStart: 300, pressureSpan: 300, doctrinePush: 2, baseWeights: DEFAULT_WEIGHTS,
-  commit: 3, commitBreak: 25, retreatLimit: 60,
+  commit: 3, commitBreak: 25, retreatLimit: 60, tactics: 100, playerTactics: 0, enemyTactics: 0,
 };
 
 export interface BattleOptions {

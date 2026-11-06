@@ -6,7 +6,7 @@
  * Rendering only ever reads the battle log, never simulation state.
  */
 import { content, scenarioIds } from "../content/index.js";
-import { describeEvent, previewTurnOrder, type BattleEvent, type BattleLog, type Difficulty, type Pos, type UnitSnapshot } from "../sim/index.js";
+import { createUnit, describeEvent, previewTurnOrder, stat, type BattleEvent, type BattleLog, type Difficulty, type Modifier, type Pos, type UnitSnapshot } from "../sim/index.js";
 import type { BakeRequest, BakeResponse } from "./bake.worker.js";
 import { Battle3D } from "./render3d.js";
 import { describePacing, pacingOf } from "../tools/pacing.js";
@@ -300,11 +300,17 @@ function renderRoster() {
     const text = document.createElement("span");
     text.innerHTML = `<span class="dot"></span> `;
     const label = document.createElement("span");
-    label.innerHTML = `<strong>${def.name}</strong> <span class="meta">${content.races[def.raceId]!.name} ${content.classes[def.classId]!.name} · ${content.weapons[def.weaponId]!.name} · ${traits}</span>`;
+    label.innerHTML = `<strong>${def.name}</strong> <span class="meta">${content.races[def.raceId]!.name} ${content.classes[def.classId]!.name} · ${roleLine(su.unitId)} · ${content.weapons[def.weaponId]!.name} · ${traits}</span>`;
     li.append(box, text, label);
     items.push(li);
   });
   $("roster").replaceChildren(...items);
+}
+
+/** "flanker · tactics 40": the unit's battlefield role and how well it plays it. */
+function roleLine(unitId: string, mods?: Modifier[]): string {
+  const u = createUnit(content, unitId, "player", 0, mods ? { mods } : {});
+  return `${u.cls.role ?? "brute"} · tactics ${stat(u, "tactics")}`;
 }
 
 function opts() {
@@ -806,7 +812,7 @@ function renderRunPanel() {
     const trinkets = [...def.trinkets, ...r.trinkets].map((t) => content.trinkets[t]!.name).join(", ");
     const label = document.createElement("span");
     label.innerHTML =
-      `<strong>${def.name}</strong> <span class="meta">${content.classes[def.classId]!.name} · Lv ${r.level} (${r.xp}/${xpToNext(r.level)} xp)` +
+      `<strong>${def.name}</strong> <span class="meta">${content.classes[def.classId]!.name} · ${roleLine(r.unitId, unitMods(content, r))} · Lv ${r.level} (${r.xp}/${xpToNext(r.level)} xp)` +
       `${train ? ` · ${train}` : ""}${trinkets ? ` · ${trinkets}` : ""}</span>` +
       (r.fatigued ? `<span class="tag warn" title="Knocked out last battle: -10% damage">fatigued</span>` : "");
     li.append(box, label);

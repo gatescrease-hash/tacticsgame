@@ -235,6 +235,38 @@ does the same for preset squads over random placements. Sensitivity (`--presets 
 on the retuned scenarios): head-start value mean |5| points (marsh 23), flip ratio 0.91,
 throughput 56 battles/s (up from 44: fights are shorter).
 
+## Archetypes and tactics
+
+Every class has a battlefield **role** (`role` in `classes.ts`), and every unit a **tactics** value
+(0-100): how well it plays that role. Tactics starts at 40 (beasts 20), traits shift it (smart
++30, steady +15, loyal/cruel +5, cowardly -5, reckless/dim -30, mindless -100) and run training
+raises it (+20 per "Train X: +20 tactics" reward). The roster lists both ("flanker · tactics 10").
+At tactics 0 a unit just brawls, exactly as before. Role behaviour scales with tactics:
+
+| Role | Classes | Behaviour |
+|---|---|---|
+| vanguard | knight, spearman, sergeant | before contact, doesn't run more than 2 tiles ahead of the squad; prefers enemies threatening its own back line (peel) |
+| flanker | skirmisher, duelist, sandstalker, wolf, harpy, skyguard | at tactics 30+, a flanking run: before its front line makes contact, works toward the nearest enemy archer/caster/healer along a route that bends around enemy front-liners' reach, and stops short of anyone's reach; then goes in. Prefers fragile targets, avoids front-liners. Waiting for contact doesn't run the retreat clock. A flanker with no front line of its own (a duel) goes straight in |
+| marksman | archer, crossbowman, pyromancer, stormcaller, tactician | before contact, stays behind its front line; prefers fragile targets |
+| medic | cleric | before contact, stays behind its front line |
+| brute | brute, golem, automaton, mudling | no plan |
+
+The motivating case: in the Arago patrol, reckless Kesh (tactics 10) charges in and is knocked
+out at tick ~19 every time. Trained (+60 tactics) he flanks: knocked out at tick ~85 on average
+(often surviving), with three times the damage, most of it on the crossbowmen.
+
+`npm run tactics -- [scenario|all] [runs] [--levels 10,25,40] [--bonus 60]` checks that smarter play
+pays: player win % as enemy power rises, with the squad brawling (tactics 0), natural, and +60.
+At +10/+25/+40% enemy power: marsh 28/7/2 natural vs 98/70/58 at +60; cliffs 65/43/25 vs
+85/57/53; patrol 90/40/25 vs 95/58/20; foundry, skirmish (knight + archer) and wolves barely
+move. Enemy tactics matter too: smart marsh sandstalkers now flank. Tuning panel: **Tactics**
+group (`tactics` scale, `playerTactics`, `enemyTactics`).
+
+Two fixes found on the way: lurking flankers first got a big caution boost, which made them flee
+from enemies who came to them (wolves 48% -> 10% with smarter units); now they only refuse to step
+*into* reach. And AI damage values are now fractional: chip damage (an estoc on plate, ~1% of HP)
+had rounded to zero, so the duelist stopped attacking at all.
+
 ## Robustness (placement and parity)
 
 Goal: outcomes decided by *which* units you bring and how they're trained, not by the exact tile
@@ -368,6 +400,7 @@ roster, 16 runs each:
 | 4% | 36 [24-48], 87% | 15 [10-24], 77% |
 | 5% (default) | 19 [11-28], 78% | 11 [8-16], 73% |
 | 5%, + commitment (16 runs) | 21 [7-30], 81% | 9 [6-16], 72-79% |
+| 5%, + tactics and roles (16 runs) | 14-18 [7-23], 79-82% | 11-12 [8-17], 69-73% |
 
 (Before the pacing change, at 5%: 16 [12-22] 78% and 10 [6-13] 65%.)
 
@@ -382,10 +415,14 @@ hearts each time.
   Cliffside, and recruitable in runs), and two enemy harpies in Cliffside.
 - **2v2 fights are placement-fragile underneath.** Smoothed settling hides it, but the raw skirmish
   still swings hard between adjacent rows (who meets whom first). The skirmish needs a big enemy
-  nerf (-71% power).
+  nerf (-67% power).
+- **The 3-unit mirror (knight, archer, cleric) is placement-chaotic.** In `robustness --settle` it
+  settles as a player win from only 20% of placements on normal (p range 0-88%), with or without
+  tactics (checked with `--rules '{"tactics":0}'`); raw from its default spots the player wins 65%.
+  Who meets whom first decides it; it has drifted with every AI change. Worth a dedicated look.
 - **Foundry and Cliffside are hard on the starting roster** (Kesh, reckless, dives in and dies
   first; Cliffside's crossbows on a 2 m bluff punish Sela without a flyer to answer them), so they
-  carry big power cuts (0 and +33, from +12 and +70) and their curves are bumpy.
+  carry big power cuts (0 and +25, from +12 and +70) and their curves are bumpy.
 - **Run loop balance is first-pass.** The auto-player numbers come from 24 runs per cell. Skirmish
   (2 slots) is the most common run-ender. Retrying a lost battle (design notes) isn't built yet.
 - **Scenarios represent early-run fights.** At +0% enemy strength they settle as wins on normal for

@@ -42,7 +42,7 @@ export interface RosterUnit {
   /** XP towards the next level (see xpToNext). */
   xp: number;
   /** Flat stat bonuses from training. */
-  training: Partial<Record<StatName, number>>;
+  training: Partial<Record<Trainable, number>>;
   trinkets: string[];
   /** Knocked out last battle: deals 10% less damage in the next one. */
   fatigued: boolean;
@@ -52,7 +52,7 @@ export interface RosterUnit {
 
 export type Offer =
   | { kind: "recruit"; unitId: string; label: string }
-  | { kind: "train"; unitId: string; stat: StatName; amount: number; label: string }
+  | { kind: "train"; unitId: string; stat: Trainable; amount: number; label: string }
   | { kind: "trinket"; unitId: string; trinketId: string; label: string }
   | { kind: "rest"; label: string };
 
@@ -66,6 +66,9 @@ export interface BattleRecord {
   heartsLost: number;
   knockedOut: string[];
 }
+
+/** What training can raise: a stat, or tactics (how well the unit plays its battlefield role). */
+export type Trainable = StatName | "tactics";
 
 export interface RunState {
   seed: number;
@@ -160,7 +163,7 @@ export function unitMods(content: Content, r: RosterUnit): Modifier[] {
     mods.push({ key: "hp", op: "flat", value: 2 * levels });
     if (levels >= 2) mods.push({ key: mainStat(content, r.unitId), op: "flat", value: Math.floor(levels / 2) });
   }
-  for (const [stat, v] of Object.entries(r.training)) if (v) mods.push({ key: stat as StatName, op: "flat", value: v });
+  for (const [stat, v] of Object.entries(r.training)) if (v) mods.push({ key: stat as Trainable, op: "flat", value: v });
   if (r.fatigued) mods.push({ key: "damageDealt", op: "pct", value: -10 });
   return mods;
 }
@@ -260,9 +263,12 @@ function makeOffers(content: Content, run: RunState, n: number): Offer[] {
   {
     const r = run.roster[rng.int(run.roster.length)]!;
     const main = mainStat(content, r.unitId);
-    const stat = rng.int(2) === 0 ? main : TRAINABLE[rng.int(TRAINABLE.length)]!;
-    const amount = stat === "hp" ? 4 : 2;
-    candidates.push({ kind: "train", unitId: r.unitId, stat, amount, label: `Train ${name(r.unitId)}: +${amount} ${stat}` });
+    const roll = rng.int(3);
+    const stat: Trainable = roll === 0 ? main : roll === 1 ? "tactics" : TRAINABLE[rng.int(TRAINABLE.length)]!;
+    const amount = stat === "hp" ? 4 : stat === "tactics" ? 20 : 2;
+    const role = content.classes[content.units[r.unitId]!.classId]!.role ?? "brute";
+    const what = stat === "tactics" ? `+${amount} tactics (plays ${role} better)` : `+${amount} ${stat}`;
+    candidates.push({ kind: "train", unitId: r.unitId, stat, amount, label: `Train ${name(r.unitId)}: ${what}` });
   }
   const trinketIds = Object.keys(content.trinkets);
   const holders = run.roster.filter((r) => r.trinkets.length + content.units[r.unitId]!.trinkets.length < 2);

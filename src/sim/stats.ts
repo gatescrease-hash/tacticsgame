@@ -38,6 +38,8 @@ function baseValue(u: Unit, key: ModKey): number {
     case "damageDealt":
     case "damageTaken":
       return 100;
+    case "tactics":
+      return u.tacticsBase;
     default:
       return u.base[key];
   }
@@ -77,6 +79,7 @@ export function stat(u: Unit, key: ModKey): number {
   }
   v = idiv(v * (100 + pct), 100);
   v = Math.max(minimum(key), Math.min(cap, v));
+  if (key === "tactics") v = Math.min(100, v);
   u.cache.set(key, v);
   return v;
 }

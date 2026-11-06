@@ -71,6 +71,15 @@ const GROUPS: Group[] = [
     ],
   },
   {
+    name: "Tactics",
+    note: "How well units play their role (vanguard, flanker, marksman, medic, brute). Below 30, no flanking runs.",
+    fields: [
+      num("rules.tactics", "Tactics %", R.tactics, 0, 200, 10, "Scales everyone's tactics. 0 = everyone just brawls."),
+      num("rules.playerTactics", "Player tactics +", R.playerTactics, -100, 100, 10, "Added to each of your units (what training would do)."),
+      num("rules.enemyTactics", "Enemy tactics +", R.enemyTactics, -100, 100, 10, "Added to each enemy."),
+    ],
+  },
+  {
     name: "AI weights",
     note: "Every unit starts here; traits (brave, cowardly...) add on top.",
     fields: [

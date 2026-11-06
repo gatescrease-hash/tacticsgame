@@ -1,4 +1,4 @@
-import { debugCandidates, decide, isFragile } from "./ai.js";
+import { debugCandidates, decide, hasContact, isFragile, PLAN_SKILL, roleOf, tacticsSkill } from "./ai.js";
 import { advance, nextActor, openingGauge, projectTurnOrder, THRESHOLD, ticksToNextEvent } from "./clock.js";
 import { basicAttack, executeAbility, inRangeFrom } from "./combat.js";
 import { firePassives, say } from "./effects.js";
@@ -100,6 +100,7 @@ export function createUnit(content: Content, unitId: string, side: Side, uid: nu
     posture: null,
     evasion: 0,
     lastTurn: null,
+    tacticsBase: Math.max(0, (def.tactics ?? cls.tactics ?? (cls.tags.includes("beast") ? 20 : 40)) + traits.reduce((a, t) => a + (t.tactics ?? 0), 0)),
     cache: new Map(),
   };
   const abilities: AbilityDef[] = [basicAttack(u), ...cls.abilities.map((id) => need(content.abilities, id, "ability"))];
@@ -374,7 +375,9 @@ function tickCommitment(s: BattleState, u: Unit): void {
 function afterChoice(s: BattleState, u: Unit, choice: ReturnType<typeof decide>["choice"]): void {
   // Backing off or hovering: any turn that neither acts nor closes on the enemy (orders to hold excepted).
   const closes = choice.kind === "move" && nearestDist(s, u, choice.to) < nearestDist(s, u, u.pos);
-  u.lastTurn = { t: s.t, evasive: u.intent !== "hold" && choice.kind !== "ability" && !closes };
+  // A flanker biding its time until its front line makes contact isn't running away.
+  const lurking = roleOf(u) === "flanker" && tacticsSkill(u, s.rules) >= PLAN_SKILL && !hasContact(s, u);
+  u.lastTurn = { t: s.t, evasive: u.intent !== "hold" && choice.kind !== "ability" && !closes && !lurking };
   if (choice.kind === "ability") {
     // Acting (healers healing included) resets the retreat clock; attacking completes an engagement.
     u.evasion = 0;
@@ -391,6 +394,8 @@ function afterChoice(s: BattleState, u: Unit, choice: ReturnType<typeof decide>[
   // their right play (forcing them in hands the fight to whoever moves second). The retreat
   // clock still stops them hovering forever.
   if (kind === "engage" && isFragile(u)) return;
+  // Nor is a flanker that's still biding its time.
+  if (kind === "engage" && lurking) return;
   // Engaging lasts until the unit attacks (capped, in case it never gets there); repositioning lasts `commit` steps.
   const steps = (kind === "engage" ? 4 * s.rules.commit : s.rules.commit) - 1;
   if (steps > 0) u.posture = { kind, steps, hp: u.hp, target: kind === "engage" ? (choice.target?.uid ?? null) : null };

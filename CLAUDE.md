@@ -17,6 +17,9 @@ anticipating every future need. It is fine to leave TODOs.
 - `npm run pacing -- all 40`: how turns are spent (act / advance / retreat / wait / ping-pong), hit size.
 - `npm run tune-roster -- [scenarios] [powers]` and `npm run tune -- <scenario>`: settled win % as
   enemy power shifts, for retuning scenario `power` after rule or AI changes.
+- `npm run tactics -- all 40`: does smarter play win more? (squad brawling vs natural vs +60 tactics)
+- AI roles live in `ai.ts` (`roleOf`, `tacticsSkill`, `roleMult`, `zocMap`, flanking run in `decide`);
+  any new role behaviour must scale with tactics and should be checked with `npm run tactics`.
 
 ## Architecture rules (from the design notes)
 

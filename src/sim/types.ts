@@ -34,10 +34,22 @@ export const STAT_NAMES: readonly StatName[] = [
 
 /** Derived values: calculated from stats, class, race and armour, never rolled. */
 /** damageDealt / damageTaken are percent multipliers on final damage (base 100). */
-export type DerivedKey = "hit" | "dodge" | "parry" | "block" | "crit" | "armour" | "moveCost" | "fillRate" | "damageDealt" | "damageTaken";
+/** tactics: 0-100, how well a unit plays its role (see Role); from race, class, traits and training. */
+export type DerivedKey = "hit" | "dodge" | "parry" | "block" | "crit" | "armour" | "moveCost" | "fillRate" | "damageDealt" | "damageTaken" | "tactics";
 export const DERIVED_KEYS: readonly DerivedKey[] = [
-  "hit", "dodge", "parry", "block", "crit", "armour", "moveCost", "fillRate", "damageDealt", "damageTaken",
+  "hit", "dodge", "parry", "block", "crit", "armour", "moveCost", "fillRate", "damageDealt", "damageTaken", "tactics",
 ];
+
+/**
+ * Battlefield archetype: the tactics a unit follows, as well as its `tactics` allows.
+ *  - vanguard: advances with the squad, holds the line, peels enemies off its back line.
+ *  - flanker:  waits for the front to make contact, routes around enemy front-liners,
+ *              and goes for archers, casters and healers.
+ *  - marksman: stays behind its front line, prefers fragile targets.
+ *  - medic:    stays behind its front line, within reach of the wounded.
+ *  - brute:    no plan: hit whatever looks best (also what any unit does at tactics 0).
+ */
+export type Role = "vanguard" | "flanker" | "marksman" | "medic" | "brute";
 
 export type ModKey = StatName | DerivedKey;
 
@@ -126,6 +138,10 @@ export interface ClassDef {
   passives: string[];
   /** Role tags readable by doctrines and scouting: heavy, ranged, healer, caster... */
   tags: string[];
+  /** Battlefield archetype (default brute). */
+  role?: Role;
+  /** Starting tactics for this class's members before traits (default 40; beasts 20). */
+  tactics?: number;
 }
 
 export interface WeaponDef {
@@ -271,6 +287,8 @@ export interface TraitDef {
   /** Morale result when a check fails / passes at an HP threshold. */
   onBreak?: "shaken" | "frenzy";
   lines?: Partial<Record<Reason, string[]>>;
+  /** Added to the unit's tactics (how well it plays its role). */
+  tactics?: number;
 }
 
 // ---------------------------------------------------------------- units and scenarios
@@ -285,6 +303,8 @@ export interface UnitDef {
   /** Personal stats. */
   stats: Stats;
   traits: string[];
+  /** Override the starting tactics (before traits). */
+  tactics?: number;
 }
 
 export type Doctrine =
@@ -403,6 +423,8 @@ export interface Unit {
   evasion: number;
   /** When this unit's previous turn was, and whether it backed off or held. */
   lastTurn: { t: number; evasive: boolean } | null;
+  /** Starting tactics (class/unit base + traits), before training mods. */
+  tacticsBase: number;
   /** Bounded-luck meters per roll stage (rules.luck = "meter"). */
   meters: Record<string, number>;
   /** Consecutive turns spent holding. Impatience: waiting erodes caution so standoffs break. */

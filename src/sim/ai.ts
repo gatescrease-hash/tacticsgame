@@ -7,7 +7,7 @@ import { alliesOf, DEFAULT_RULES, enemiesOf, type BattleState, type Rules } from
 import { hasStatus, hasStatusTag, maxHp, stat } from "./stats.js";
 import { canLeap, edgeCost, isFlyer, jumpOf } from "./movement.js";
 import type { CandidateDebug } from "./log.js";
-import type { AbilityDef, Doctrine, Pos, Reason, Unit, Weights } from "./types.js";
+import type { AbilityDef, Doctrine, Pos, Reason, Role, Unit, Weights } from "./types.js";
 
 /**
  * Utility AI. On its turn a unit generates a bounded set of candidate actions,
@@ -44,6 +44,48 @@ interface Ctx {
   focus: Unit | null;
   /** Walking-distance field to a commitment target (cached). */
   field?: { uid: number; cost: Int32Array };
+  /** Archetype and how well this unit plays it (0-1, from tactics). */
+  role: Role;
+  skill: number;
+  /** Someone else on my side is already in contact with the enemy (or the battle is old). */
+  contact: boolean;
+  /** Flankers: extra path cost per tile within reach of an enemy front-liner. */
+  zoc: Int32Array | null;
+}
+
+/** Tactics (0-1) needed to follow a multi-turn plan such as a flanking run. Below it, units just brawl. */
+export const PLAN_SKILL = 0.3;
+
+export function roleOf(u: Unit): Role {
+  return u.cls.role ?? "brute";
+}
+
+/** How well a unit plays its role, 0-1: its tactics, scaled and shifted by the rules. */
+export function tacticsSkill(u: Unit, rules: Rules): number {
+  const bonus = u.side === "player" ? rules.playerTactics : rules.enemyTactics;
+  return Math.max(0, Math.min(100, idiv(stat(u, "tactics") * rules.tactics, 100) + bonus)) / 100;
+}
+
+/**
+ * Is anyone else on this unit's side next to an enemy? Also true when there's no one else to
+ * wait for (no non-flanker allies), or the battle has gone on long enough not to care.
+ */
+export function hasContact(s: BattleState, u: Unit): boolean {
+  if (s.t > s.rules.pressureStart) return true;
+  let waitFor = false;
+  for (const a of s.units) {
+    if (!a.alive || a.side !== u.side || a === u) continue;
+    if (roleOf(a) !== "flanker") waitFor = true;
+    for (const e of s.units) if (e.alive && e.side !== u.side && manhattan(a.pos, e.pos) <= 1) return true;
+  }
+  // No front line of my own to wait for: I'm the one who makes contact.
+  return !waitFor;
+}
+
+/** A front-liner: the units a flanker routes around. */
+function isFrontLiner(u: Unit): boolean {
+  const r = roleOf(u);
+  return r === "vanguard" || r === "brute";
 }
 
 /** The squad's shared target: the enemy nearest the squad's centre, weakest first on ties. */
@@ -96,8 +138,19 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     dangerCache: new Map(),
     threats: [],
     focus: null,
+    role: roleOf(me),
+    skill: tacticsSkill(me, s.rules),
+    contact: false,
+    zoc: null,
   };
+  ctx.contact = hasContact(s, me);
+  const caution = ctx.w.danger;
   if (s.rules.nerve < 100) ctx.w.danger = idiv(ctx.w.danger * nerveScale(me, s.rules.nerve), 100);
+  // Flankers hold off until their front line has made contact (see lurkCost: they won't
+  // step into enemy reach meanwhile, but still fight anyone who comes to them).
+  const lurking = ctx.role === "flanker" && !ctx.contact && ctx.skill >= PLAN_SKILL;
+  // Flankers route around enemy front-liners (their reach costs extra on the way).
+  if (ctx.role === "flanker" && ctx.skill > 0) ctx.zoc = zocMap(ctx);
   // Retreat clock ran out: no more caution until this unit has attacked.
   const forced = s.rules.retreatLimit > 0 && me.evasion >= s.rules.retreatLimit && me.intent !== "hold";
   if (forced) ctx.w.danger = 0;
@@ -149,7 +202,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
   // Nothing in reach from here: forward pressure applies to steps along the way to a target.
   const engaged = cands.some((c) => c.kind === "ability" && c.target.side !== me.side);
   // Archers, mages and healers feel half the pressure: their job is to hang back.
-  const push = !engaged && s.rules.advance > 0 ? (s.rules.advance * Math.max(1, ctx.w.aggression)) / (isFragile(me) ? 20 : 10) : 0;
+  const push = !engaged && s.rules.advance > 0 ? ((s.rules.advance * Math.max(1, ctx.w.aggression)) / (isFragile(me) ? 20 : 10)) * (lurking ? 1 - ctx.skill : 1) : 0;
 
   if (opts.abilitiesOnly) {
     // A follow-up action (charge): only act, never move or wait.
@@ -161,10 +214,16 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
   // 2. Move toward a handful of tactical spots, one step at a time (re-evaluating each step).
   const occupied = new Uint8Array(s.grid.width * s.grid.height);
   for (const u of s.units) if (u.alive && u !== me) occupied[s.grid.index(u.pos)] = 1;
+  const zoc = ctx.zoc;
   const { cost, prev, order } = pathCosts(
     s.grid,
     me.pos,
-    (from, to) => edgeCost(me, s.grid, from, to),
+    zoc
+      ? (from, to) => {
+          const c = edgeCost(me, s.grid, from, to);
+          return c < 0 ? c : c + zoc[to.y * s.grid.width + to.x]!;
+        }
+      : (from, to) => edgeCost(me, s.grid, from, to),
     (p) => occupied[p.y * s.grid.width + p.x] === 0,
     THRESHOLD * 5,
     canLeap(me),
@@ -279,13 +338,34 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
 
   const back = me.lastStep && me.hp >= me.lastStep.hp ? me.lastStep.from : null;
 
+  // Role positioning before contact: the back line doesn't lead; the vanguard doesn't run off alone.
+  const nearestEnemyDist = (p: Pos) => {
+    let best = Infinity;
+    for (const e of ctx.enemies) best = Math.min(best, manhattan(e.pos, p));
+    return best;
+  };
+  let frontDist = Infinity;
+  if (!ctx.contact && ctx.skill > 0 && (ctx.role === "marksman" || ctx.role === "medic")) {
+    for (const a of ctx.allies) if (a !== me && !isFragile(a)) frontDist = Math.min(frontDist, nearestEnemyDist(a.pos));
+  }
+  const roleCost = (to: Pos): number => {
+    if (ctx.contact || ctx.skill <= 0) return 0;
+    if (frontDist < Infinity) return Math.max(0, frontDist - nearestEnemyDist(to)) * 6 * ctx.skill;
+    if (ctx.role === "vanguard") {
+      let nearest = Infinity;
+      for (const a of ctx.allies) if (a !== me) nearest = Math.min(nearest, manhattan(a.pos, to));
+      return nearest === Infinity ? 0 : Math.max(0, nearest - 2) * 6 * ctx.skill;
+    }
+    return 0;
+  };
+
   // One step at a time: each free neighbour, scored by its position value.
   for (const step of stepOptions(s, me)) {
     const i = s.grid.index(step);
     if (cost[i]! <= 0 || prev[i] !== hereIdx) continue;
     const pv = positionValue(i);
     const d = danger(ctx, step);
-    const coh = cohesionCost(step);
+    const coh = cohesionCost(step) + roleCost(step);
     let fwd = push > 0 && pv.goal && pv.goal.target && onPath(pv.goal.spot, i) ? push : 0;
     // Momentum: don't step straight back where I just came from unless I've been hurt since.
     if (push > 0 && back && back.x === step.x && back.y === step.y) fwd -= 2 * push;
@@ -335,13 +415,30 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     }
   }
 
-  // Commitment: only options that keep to the chosen tactic (if any do; otherwise it's dropped).
   let pool = cands;
+  // Flanking run: before contact, a flanker works its way toward the enemy back line along
+  // a route that avoids their front-liners, stops short of anyone's reach, and holds there.
+  if (lurking) {
+    const tgt = flankTarget(ctx);
+    const field = tgt ? walkField(ctx, tgt) : null;
+    const here = field ? field[hereIdx]! : -1;
+    const ok = (c: Choice) => {
+      if (c.kind !== "move") return true;
+      const dTo = danger(ctx, c.to);
+      if (dTo < dangerHere) return true; // getting out of reach is always fine
+      const f = field ? field[s.grid.index(c.to)]! : -1;
+      return here >= 0 && f >= 0 && f < here && dTo <= dangerHere;
+    };
+    const keep = cands.filter(ok);
+    if (keep.length > 0) pool = keep;
+  }
+
+  // Commitment: only options that keep to the chosen tactic (if any do; otherwise it's dropped).
   const posture = forced ? { kind: "engage" as const, target: me.posture?.kind === "engage" ? me.posture.target : null } : me.posture;
-  if (posture) {
-    let keep = cands.filter((c) => keepsPosture(ctx, posture.kind, posture.target, c));
+  if (posture && !lurking) {
+    let keep = pool.filter((c) => keepsPosture(ctx, posture.kind, posture.target, c));
     // Engaging but the way forward is blocked (often by friends): hold and wait for a gap.
-    if (posture.kind === "engage" && !keep.some((c) => c.kind === "move")) keep = cands.filter((c) => c.kind !== "move");
+    if (posture.kind === "engage" && !keep.some((c) => c.kind === "move")) keep = pool.filter((c) => c.kind !== "move");
     if (keep.length > 0) pool = keep;
     else me.posture = null;
   }
@@ -375,6 +472,20 @@ function keepsPosture(ctx: Ctx, kind: "engage" | "reposition", targetUid: number
   return there >= 0 && there < here;
 }
 
+/** A flanker's mark: the nearest enemy archer, caster or healer, else the nearest enemy. */
+function flankTarget(ctx: Ctx): Unit | null {
+  let best: Unit | null = null;
+  let bestKey = Infinity;
+  for (const e of ctx.enemies) {
+    const key = (isFragile(e) ? 0 : 1000) + manhattan(e.pos, ctx.me.pos);
+    if (key < bestKey) {
+      best = e;
+      bestKey = key;
+    }
+  }
+  return best;
+}
+
 function nearestEnemy(ctx: Ctx): Unit | null {
   let best: Unit | null = null;
   for (const e of ctx.enemies) if (!best || manhattan(e.pos, ctx.me.pos) < manhattan(best.pos, ctx.me.pos)) best = e;
@@ -385,7 +496,18 @@ function nearestEnemy(ctx: Ctx): Unit | null {
 function walkField(ctx: Ctx, target: Unit): Int32Array {
   if (ctx.field?.uid === target.uid) return ctx.field.cost;
   const { s, me } = ctx;
-  const { cost } = pathCosts(s.grid, target.pos, (from, to) => edgeCost(me, s.grid, to, from), () => true, Infinity, canLeap(me));
+  const zoc = ctx.zoc;
+  const { cost } = pathCosts(
+    s.grid,
+    target.pos,
+    (from, to) => {
+      const c = edgeCost(me, s.grid, to, from);
+      return c < 0 || !zoc ? c : c + zoc[from.y * s.grid.width + from.x]!;
+    },
+    () => true,
+    Infinity,
+    canLeap(me),
+  );
   ctx.field = { uid: target.uid, cost };
   return cost;
 }
@@ -467,8 +589,47 @@ function danger(ctx: Ctx, p: Pos): number {
 }
 
 /** Doctrine target priorities (percent). */
+/**
+ * Flankers: tiles next to an enemy front-liner cost this much extra to walk through,
+ * so their routes bend around the line (scaled by how well they play the role).
+ */
+function zocMap(ctx: Ctx): Int32Array {
+  const { s, me } = ctx;
+  const out = new Int32Array(s.grid.width * s.grid.height);
+  const pen = Math.round(stat(me, "moveCost") * 3 * ctx.skill);
+  if (pen <= 0) return out;
+  for (const e of ctx.enemies) {
+    if (!isFrontLiner(e)) continue;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (Math.abs(dx) + Math.abs(dy) !== 1) continue;
+        const p = { x: e.pos.x + dx, y: e.pos.y + dy };
+        if (s.grid.inBounds(p)) out[s.grid.index(p)] = out[s.grid.index(p)]! + pen;
+      }
+    }
+  }
+  return out;
+}
+
+/** Role target preferences (percent): flankers hunt the back line, the vanguard protects its own. */
+function roleMult(ctx: Ctx, v: Unit): number {
+  const k = ctx.skill;
+  if (k <= 0) return 100;
+  switch (ctx.role) {
+    case "flanker":
+      return isFragile(v) ? 100 + Math.round(100 * k) : isFrontLiner(v) ? 100 - Math.round(40 * k) : 100;
+    case "marksman":
+      return isFragile(v) ? 100 + Math.round(50 * k) : 100;
+    case "vanguard":
+      // Peel: enemies next to (or about to reach) my back line.
+      return ctx.allies.some((a) => a !== ctx.me && isFragile(a) && manhattan(a.pos, v.pos) <= 2) ? 100 + Math.round(80 * k) : 100;
+    default:
+      return 100;
+  }
+}
+
 function targetMult(ctx: Ctx, v: Unit): number {
-  const base = doctrineMult(ctx, v);
+  const base = idiv(doctrineMult(ctx, v) * roleMult(ctx, v), 100);
   // Commitment: keep working on the current target unless another is clearly better.
   return ctx.s.rules.commitTarget && v.uid === ctx.me.committed ? idiv(base * 3, 2) : base;
 }
@@ -530,7 +691,8 @@ function abilityValue(ctx: Ctx, a: AbilityDef, t: Unit, from: Pos): { value: num
     }
     hostiles++;
     const mult = targetMult(ctx, v);
-    dmg += idiv(idiv(Math.min(ex.exp, v.hp) * 100, mhp) * mult, 100);
+    // Floats (AI scores may): small chip damage must not round away to nothing.
+    dmg += (((Math.min(ex.exp, v.hp) * 100) / mhp) * mult) / 100;
     if (ex.raw >= v.hp && ex.raw > 0) kill += idiv(ex.land * mult, 100);
     for (const e of a.effects) {
       if (e.kind === "buildup") rider += idiv(e.amount * ex.land, 1000);
@@ -539,7 +701,7 @@ function abilityValue(ctx: Ctx, a: AbilityDef, t: Unit, from: Pos): { value: num
     }
   }
   if (hostiles === 0) return { value: 0, reason: "attack", parts: {} };
-  const dmgPts = idiv(dmg * w.damage, 10);
+  const dmgPts = (dmg * w.damage) / 10;
   const killPts = idiv(kill * w.kill, 10);
   const aoePts = idiv((hostiles - 1) * 12 * w.aoe, 10);
   const ffPts = idiv(friendly * 2 * Math.max(5, w.support), 10);

@@ -17,6 +17,7 @@
     "pacing": "tsx src/cli/pacing.ts",
     "tune": "tsx src/cli/tune.ts",
     "tune-roster": "tsx src/cli/tune-roster.ts",
+    "tactics": "tsx src/cli/tactics.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.sim.json && tsc -p tsconfig.json"

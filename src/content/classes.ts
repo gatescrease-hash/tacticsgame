@@ -13,6 +13,7 @@ export const classes = {
     abilities: ["shield_bash"],
     passives: ["shield_wall", "engage"],
     tags: ["heavy", "melee"],
+    role: "vanguard",
   },
   duelist: {
     id: "duelist",
@@ -25,6 +26,7 @@ export const classes = {
     abilities: [],
     passives: ["riposte"],
     tags: ["melee"],
+    role: "flanker",
   },
   skirmisher: {
     id: "skirmisher",
@@ -37,6 +39,7 @@ export const classes = {
     abilities: [],
     passives: [],
     tags: ["melee", "skirmisher"],
+    role: "flanker",
   },
   archer: {
     id: "archer",
@@ -48,6 +51,7 @@ export const classes = {
     abilities: ["piercing_shot"],
     passives: ["keen_eye"],
     tags: ["ranged"],
+    role: "marksman",
   },
   pyromancer: {
     id: "pyromancer",
@@ -59,6 +63,7 @@ export const classes = {
     abilities: ["firebolt", "flame_nova"],
     passives: [],
     tags: ["caster", "ranged"],
+    role: "marksman",
   },
   stormcaller: {
     id: "stormcaller",
@@ -70,6 +75,7 @@ export const classes = {
     abilities: ["tide_lash", "chain_lightning", "gale"],
     passives: [],
     tags: ["caster", "ranged"],
+    role: "marksman",
   },
   cleric: {
     id: "cleric",
@@ -81,6 +87,7 @@ export const classes = {
     abilities: ["mend", "smite"],
     passives: [],
     tags: ["healer"],
+    role: "medic",
   },
   tactician: {
     id: "tactician",
@@ -92,6 +99,7 @@ export const classes = {
     abilities: ["mind_spike", "negate_turn"],
     passives: [],
     tags: ["caster", "support"],
+    role: "marksman",
   },
   brute: {
     id: "brute",
@@ -103,6 +111,7 @@ export const classes = {
     abilities: [],
     passives: [],
     tags: ["heavy", "melee"],
+    role: "brute",
   },
   skyguard: {
     id: "skyguard",
@@ -114,6 +123,7 @@ export const classes = {
     abilities: ["dive"],
     passives: [],
     tags: ["melee", "flyer"],
+    role: "flanker",
   },
   // ---- enemy classes
   swooper: {
@@ -126,6 +136,7 @@ export const classes = {
     abilities: [],
     passives: [],
     tags: ["melee", "flyer", "beast"],
+    role: "flanker",
   },
   spearman: {
     id: "spearman",
@@ -137,6 +148,7 @@ export const classes = {
     abilities: [],
     passives: ["engage"],
     tags: ["melee"],
+    role: "vanguard",
   },
   crossbowman: {
     id: "crossbowman",
@@ -148,6 +160,7 @@ export const classes = {
     abilities: [],
     passives: [],
     tags: ["ranged"],
+    role: "marksman",
   },
   sergeant: {
     id: "sergeant",
@@ -159,6 +172,7 @@ export const classes = {
     abilities: ["war_cry"],
     passives: [],
     tags: ["melee", "leader"],
+    role: "vanguard",
   },
   sandstalker: {
     id: "sandstalker",
@@ -171,6 +185,7 @@ export const classes = {
     abilities: [],
     passives: [],
     tags: ["melee", "skirmisher"],
+    role: "flanker",
   },
   golem: {
     id: "golem",
@@ -182,6 +197,7 @@ export const classes = {
     abilities: ["crushing_blow"],
     passives: [],
     tags: ["heavy", "melee"],
+    role: "brute",
   },
   automaton: {
     id: "automaton",
@@ -193,6 +209,7 @@ export const classes = {
     abilities: ["piston_slam"],
     passives: [],
     tags: ["heavy", "melee"],
+    role: "brute",
   },
   hunter: {
     id: "hunter",
@@ -205,6 +222,7 @@ export const classes = {
     abilities: ["pounce"],
     passives: [],
     tags: ["melee", "beast"],
+    role: "flanker",
   },
   mudling: {
     id: "mudling",
@@ -216,5 +234,6 @@ export const classes = {
     abilities: [],
     passives: [],
     tags: ["melee"],
+    role: "brute",
   },
 } satisfies Record<string, ClassDef>;
