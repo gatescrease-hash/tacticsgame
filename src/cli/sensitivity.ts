@@ -19,6 +19,9 @@ import { BASELINE_RULES, runBattle, type BattleOptions, type Rules } from "../si
 
 export const PRESETS: Record<string, Partial<Rules>> = {
   baseline: BASELINE_RULES,
+  /** The current defaults, and the defaults before the pacing change (bigger, rarer actions; no nerve/advance). */
+  default: {},
+  "old-pacing": { hpScale: 150, actionScale: 100, nerve: 100, advance: 0 },
   streams: { unitStreams: true },
   "streams+hp150": { unitStreams: true, hpScale: 150 },
   "streams+spread": { unitStreams: true, damageSpread: 20 },

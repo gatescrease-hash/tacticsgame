@@ -90,7 +90,8 @@ Key mechanics, briefly:
   using one position value (best reachable action, discounted by distance) minus danger. Danger
   is a threat map: what enemies could do to this tile before my next turn, shared across their
   possible targets. Traits shift weights (cowards weigh danger, smart units weigh kills and AoE).
-  Impatience and battle pressure erode caution so standoffs end. Doctrines (advance, hold/ambush,
+  Impatience and battle pressure erode caution so standoffs end. Pacing rules (see "Pacing") make
+  healthy units press forward and stop them ping-ponging between two tiles. Doctrines (advance, hold/ambush,
   hunt a class tag, pack) set enemy intent and target priorities.
 - **Elevation and pits** (`src/sim/movement.ts`, `grid.ts`, `combat.ts`): a scenario may give ground
   heights in whole metres (`heights`, digits per tile). Stepping up 1 m costs +50% movement; climbing
@@ -144,7 +145,7 @@ Findings that shaped the rules:
 | Rule | What it does | Mainly helps |
 |---|---|---|
 | `unitStreams` | each unit rolls from its own stream, fixed rolls per attack | readability, flip ratio |
-| `hpScale: 150` | +50% HP for everyone; longer fights average out swings | tempo |
+| `hpScale: 150` | +50% HP for everyone; longer fights average out swings (now 250, see Pacing) | tempo |
 | `damageSpread: 20` | ±20% damage per hit blurs hits-to-kill breakpoints | cliffs |
 | `charge` | stepping into range lets a unit strike that same turn (gauge debt) | tempo, cliffs |
 | `underdog: 10` | a side down on knockouts takes 10% less damage per unit behind (max 3) | cliffs, snowballing |
@@ -158,6 +159,39 @@ Result on the five tuned scenarios (80 seeds per point):
 
 Difficulty curves are now monotonic and smoother, and the head-start effect is roughly 40% smaller.
 Battles run about 50% longer and throughput drops accordingly.
+
+## Pacing
+
+Feedback from watching: units looked cowardly, hovering at the edge of each other's reach. `npm run
+pacing -- [scenario|all] [runs] [--rules '{json}']` measures how turns are spent: acting, stepping
+toward / away from the nearest enemy, waiting, and "flip" (stepping straight back to the tile just
+left), plus the average hit as % of the target's max HP. Rules added (all in `DEFAULT_RULES`):
+
+| Rule | What it does |
+|---|---|
+| `actionScale: 60` + `hpScale: 250` | abilities cost 60% of the gauge (cooldowns, build-up and gauge effects scale with them) while HP is 1.67x: more, smaller actions at the same damage per tick. Damage over time is scaled up to match. |
+| `nerve: 40` | healthy units weigh danger at 40% of normal, rising to 100% at half HP (archers, mages and healers keep at least 70%). Wounded units still fall back. |
+| `advance: 6` | until it has something in reach, a step along the way to a target is worth 6 x aggression/10 (half for the back line), and stepping straight back onto the tile just left costs twice that unless the unit was hurt since (holding a turn resets it). |
+
+All scenarios, 40 seeds each:
+
+| | act | step toward | step away | wait | flip | avg hit | actions / unit / 100 ticks |
+|---|---|---|---|---|---|---|---|
+| before | 10% | 42% | 31% | 15% | 29% | 34% of max HP | 1.1 |
+| after | 25% | 37% | 25% | 11% | 7% | 20% of max HP | 2.3 |
+
+The biggest single finding was the ping-pong: about 30% of all turns were a unit stepping back
+onto the tile it had just left, as its best "spot to act from" flipped while enemies moved. The
+remaining steps away are mostly flanking (wolves circling to isolated targets), kiting by archers
+and crossbows, and wounded units retreating.
+
+Side effects: difficulty curves got steeper (a stronger enemy wins more reliably: less noise), and
+every scenario had to be retuned. Scenario `power` is now tuned against the run's starting roster
+at its default spot (`npm run tune-roster`, target ~85% settled at +0%), since runs are the main
+mode; the preset single battles became easier (median settled 88-96%). `npm run tune -- <scenario>`
+does the same for preset squads over random placements. Sensitivity (`--presets default,old-pacing`
+on the retuned scenarios): head-start value mean |5| points (marsh 23), flip ratio 0.91,
+throughput 56 battles/s (up from 44: fights are shorter).
 
 ## Robustness (placement and parity)
 
@@ -283,14 +317,16 @@ animation cues, so it shows whichever battle the settle step picked. three.js ma
 
 `npm run autorun -- --runs 24 --ramp 5 --policy sensible|careless` plays whole runs headlessly
 (sensible: deploys its highest levels, rests when low, recruits to 6, then trains; careless: random
-deployment and rewards). Measured on normal with all maps elevated, Cliffside in the rotation and
-smoothed settling, 24 runs each:
+deployment and rewards). Measured on normal with the pacing rules and scenarios tuned to the run
+roster, 16 runs each:
 
 | ramp | sensible: battles per run [10th-90th], battles won | careless |
 |---|---|---|
-| 3% | 52 [31-60], 92% (runs cap at 60) | 11 [7-20], 73% |
-| 4% | 26 [16-38], 83% | 12 [6-18], 69% |
-| 5% (default) | 16 [12-22], 78% | 10 [6-13], 65% |
+| 3% | 60 [41-60], 98% (runs cap at 60) | 21 [10-28], 82% |
+| 4% | 36 [24-48], 87% | 15 [10-24], 77% |
+| 5% (default) | 19 [11-28], 78% | 11 [8-16], 73% |
+
+(Before the pacing change, at 5%: 16 [12-22] 78% and 10 [6-13] 65%.)
 
 Before smoothing, sensible runs died at a median of 9 battles at every ramp: the 2v2 skirmish
 settled as a loss from most formation spots (0% one row up, 92% on its default row) and cost 3
@@ -302,8 +338,11 @@ hearts each time.
   hummocks, a knoll; furnace pits in the foundry). Flyers: Aeris, a winged-folk skyguard (in
   Cliffside, and recruitable in runs), and two enemy harpies in Cliffside.
 - **2v2 fights are placement-fragile underneath.** Smoothed settling hides it, but the raw skirmish
-  still swings hard between adjacent rows (who meets whom first). The skirmish needed a big enemy
-  nerf (-58% power) to settle at ~2/3 on the smoothed measure.
+  still swings hard between adjacent rows (who meets whom first). The skirmish needs a big enemy
+  nerf (-73% power).
+- **Foundry and Cliffside are hard on the starting roster** (Kesh, reckless, dives in and dies
+  first; Cliffside's crossbows on a 2 m bluff punish Sela without a flyer to answer them), so they
+  carry big power cuts (+5 and +10, from +12 and +70) and their curves are bumpy.
 - **Run loop balance is first-pass.** The auto-player numbers come from 24 runs per cell. Skirmish
   (2 slots) is the most common run-ender. Retrying a lost battle (design notes) isn't built yet.
 - **Scenarios represent early-run fights.** At +0% enemy strength they settle as wins on normal for

@@ -60,19 +60,34 @@ export interface Rules {
    * when the enemy doctrine is itself an ambush (hold).
    */
   playerHold: number;
+  /**
+   * Percent scale on ability gauge costs and cooldowns (and per-action buildup and
+   * gauge effects), paired with hpScale: lower = more, smaller actions at the same
+   * damage per tick. 100 = the original pacing.
+   */
+  actionScale: number;
+  /**
+   * Nerve: healthy units shrug off danger and wounded ones grow careful. At full HP
+   * caution is scaled to this percent, rising to 100% at half HP. 100 = off.
+   */
+  nerve: number;
+  /** Until it has something in reach, each step toward the nearest enemy is worth this much (and each step away costs it). 0 = off. */
+  advance: number;
 }
 
 export const BASELINE_RULES: Rules = {
-  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: false, playerHold: 0,
+  unitStreams: false, hpScale: 100, damageSpread: 0, charge: false, underdog: 0, luck: "dice", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: false, playerHold: 0, actionScale: 100, nerve: 100, advance: 0,
 };
 
 /**
  * The rules battles use unless told otherwise. Chosen with `npm run sensitivity`:
  * together these cut the value of a +/-30 opening head start from ~37 to ~7 win-%
  * points and made every difficulty curve monotonic (see README "Sensitivity").
+ * Pacing (actionScale 60 with hpScale 250, nerve, advance) was chosen with `npm run pacing`:
+ * more, smaller actions and units that press forward instead of hovering at the edge of reach.
  */
 export const DEFAULT_RULES: Rules = {
-  unitStreams: true, hpScale: 150, damageSpread: 20, charge: true, underdog: 10, luck: "meter", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: true, playerHold: 0,
+  unitStreams: true, hpScale: 250, damageSpread: 20, charge: true, underdog: 10, luck: "meter", hitDice: 1, seededLuck: true, ties: "player", focusFire: false, commitTarget: false, stride: 0, cohesion: 0, formation: true, playerHold: 0, actionScale: 60, nerve: 40, advance: 6,
 };
 
 export interface BattleOptions {

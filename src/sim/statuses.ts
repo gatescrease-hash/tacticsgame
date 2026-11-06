@@ -70,8 +70,10 @@ export function updateStatuses(s: BattleState): void {
     for (const st of [...u.statuses]) {
       if (st.def.dot && st.nextPulse <= s.t && st.nextPulse <= st.expiresAt) {
         st.nextPulse += st.def.dot.every;
-        const hpAfter = loseHp(u, st.def.dot.damage);
-        emit(s, { t: s.t, kind: "dot", uid: u.uid, status: st.def.id, damage: st.def.dot.damage, hpAfter });
+        // Pulses are timed, not per action: at a faster action pace (bigger HP pools) they hit harder to match.
+        const dmg = idiv(st.def.dot.damage * 100, s.rules.actionScale);
+        const hpAfter = loseHp(u, dmg);
+        emit(s, { t: s.t, kind: "dot", uid: u.uid, status: st.def.id, damage: dmg, hpAfter });
         afterDamage(s, u, st.sourceUid);
         if (!u.alive) break;
       }

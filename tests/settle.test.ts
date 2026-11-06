@@ -16,7 +16,7 @@ describe("settled outcomes", () => {
     const shown = new Set<number>();
     for (let seed = 1; seed <= 6; seed++) {
       // 27 samples: 3 of them sit exactly on the chosen spot, so the shown battle can vary.
-      const r = settleBattle(content, "skirmish", seed, {}, { samples: 27 });
+      const r = settleBattle(content, "duel", seed, {}, { samples: 27 });
       winners.add(r.result.winner);
       shown.add(r.seed);
     }

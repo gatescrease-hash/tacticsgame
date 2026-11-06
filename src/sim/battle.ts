@@ -5,6 +5,7 @@ import { firePassives, say } from "./effects.js";
 import { arrangeFormation } from "./formation.js";
 import { Grid, firstStep, manhattan, pathCosts } from "./grid.js";
 import { Rng } from "./rng.js";
+import { idiv } from "./math.js";
 import { DEFAULT_RULES, emit, type BattleOptions, type BattleState, type Rules } from "./state.js";
 import { updateStatuses } from "./statuses.js";
 import { maxHp } from "./stats.js";
@@ -96,12 +97,34 @@ export function createUnit(content: Content, unitId: string, side: Side, uid: nu
     meters: {},
     committed: null,
     plan: null,
+    lastStep: null,
     cache: new Map(),
   };
   const abilities: AbilityDef[] = [basicAttack(u), ...cls.abilities.map((id) => need(content.abilities, id, "ability"))];
   u.abilities = abilities;
   u.hp = maxHp(u);
   return u;
+}
+
+const scaledCache = new WeakMap<AbilityDef, Map<number, AbilityDef>>();
+
+/** An ability at a different pacing (rules.actionScale): cost, cooldown and per-action status pressure scaled. */
+function scaledAbility(a: AbilityDef, k: number): AbilityDef {
+  let byK = scaledCache.get(a);
+  if (!byK) scaledCache.set(a, (byK = new Map()));
+  let out = byK.get(k);
+  if (!out) {
+    out = {
+      ...a,
+      cost: Math.max(1, idiv(a.cost * k, 100)),
+      cooldown: idiv(a.cooldown * k, 100),
+      effects: a.effects.map((e) =>
+        e.kind === "buildup" || e.kind === "gauge" ? { ...e, amount: idiv(e.amount * k, 100) } : e,
+      ),
+    };
+    byK.set(k, out);
+  }
+  return out;
 }
 
 export function setupBattle(content: Content, scenarioId: string, seed: number, opts: BattleOptions = {}): BattleState {
@@ -132,6 +155,7 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
       u.staticMods.push({ key: "hp", op: "pct", value: opts.enemyPower }, { key: "damageDealt", op: "pct", value: opts.enemyPower });
     }
     if (rules.hpScale !== 100) u.staticMods.push({ key: "hp", op: "pct", value: rules.hpScale - 100 });
+    if (rules.actionScale !== 100) u.abilities = u.abilities.map((a) => scaledAbility(a, rules.actionScale));
     u.cache.clear();
     u.hp = maxHp(u);
     u.pos = { ...((i >= 0 ? opts.placements?.[i] : undefined) ?? su.pos) };
@@ -301,8 +325,11 @@ function takeTurn(s: BattleState, u: Unit): void {
       return;
     }
     case "wait":
-      u.gauge -= WAIT_COST;
-      emit(s, { t: s.t, kind: "wait", uid: u.uid, cost: WAIT_COST });
+      // Holding breaks momentum: next turn the unit may go back the way it came.
+      u.lastStep = null;
+      const waitCost = idiv(WAIT_COST * s.rules.actionScale, 100);
+      u.gauge -= waitCost;
+      emit(s, { t: s.t, kind: "wait", uid: u.uid, cost: waitCost });
       return;
   }
 }
@@ -317,6 +344,7 @@ function doMove(s: BattleState, u: Unit, to: Pos): void {
   if (!u.alive) return;
   const wasInRange = s.rules.charge && anyTargetInRange(s, u);
   u.pos = { ...to };
+  u.lastStep = { from, hp: u.hp };
   emit(s, { t: s.t, kind: "move", uid: u.uid, from, to: { ...to }, cost });
   // Charge: closing into range lets the unit strike now, paying with gauge debt.
   // This removes the penalty for being the one who steps into range first.

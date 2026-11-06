@@ -392,6 +392,8 @@ export interface Unit {
   committed: number | null;
   /** AI commitment: a multi-step move in progress (rules.stride). */
   plan: { dest: Pos; steps: number; hp: number; reason: Reason } | null;
+  /** The tile this unit last stepped off, and its HP then (rules.advance: no ping-ponging). Cleared by holding. */
+  lastStep: { from: Pos; hp: number } | null;
   /** Bounded-luck meters per roll stage (rules.luck = "meter"). */
   meters: Record<string, number>;
   /** Consecutive turns spent holding. Impatience: waiting erodes caution so standoffs break. */

@@ -14,6 +14,9 @@ anticipating every future need. It is fine to leave TODOs.
 - `npm run batch -- <scenario|all> <runs>`: headless balance stats over seeds 1..runs.
 - `npm run dev`: Vite dev server for the browser front end (single battles and runs).
 - `npm run autorun -- --runs 16 --policy sensible|careless`: play whole roguelike runs headlessly.
+- `npm run pacing -- all 40`: how turns are spent (act / advance / retreat / wait / ping-pong), hit size.
+- `npm run tune-roster -- [scenarios] [powers]` and `npm run tune -- <scenario>`: settled win % as
+  enemy power shifts, for retuning scenario `power` after rule or AI changes.
 
 ## Architecture rules (from the design notes)
 

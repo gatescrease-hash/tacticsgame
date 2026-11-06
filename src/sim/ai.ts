@@ -97,6 +97,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     threats: [],
     focus: null,
   };
+  if (s.rules.nerve < 100) ctx.w.danger = idiv(ctx.w.danger * nerveScale(me, s.rules.nerve), 100);
   if (s.rules.focusFire && me.side === "player") ctx.focus = squadFocus(ctx.allies, ctx.enemies);
   if (me.committed !== null && !s.units[me.committed]?.alive) me.committed = null;
   // Shared threat picture for this decision: what each enemy could do to me before my next turn.
@@ -141,6 +142,11 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
       });
     }
   }
+
+  // Nothing in reach from here: forward pressure applies to steps along the way to a target.
+  const engaged = cands.some((c) => c.kind === "ability" && c.target.side !== me.side);
+  // Archers, mages and healers feel half the pressure: their job is to hang back.
+  const push = !engaged && s.rules.advance > 0 ? (s.rules.advance * Math.max(1, ctx.w.aggression)) / (isFragile(me) ? 20 : 10) : 0;
 
   if (opts.abilitiesOnly) {
     // A follow-up action (charge): only act, never move or wait.
@@ -268,6 +274,8 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     return nearest === Infinity ? 0 : Math.max(0, nearest - 2) * s.rules.cohesion;
   };
 
+  const back = me.lastStep && me.hp >= me.lastStep.hp ? me.lastStep.from : null;
+
   // One step at a time: each free neighbour, scored by its position value.
   for (const step of stepOptions(s, me)) {
     const i = s.grid.index(step);
@@ -275,7 +283,10 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
     const pv = positionValue(i);
     const d = danger(ctx, step);
     const coh = cohesionCost(step);
-    const score = pv.value - dangerPenalty(d) - disengageCost(step) - coh;
+    let fwd = push > 0 && pv.goal && pv.goal.target && onPath(pv.goal.spot, i) ? push : 0;
+    // Momentum: don't step straight back where I just came from unless I've been hurt since.
+    if (push > 0 && back && back.x === step.x && back.y === step.y) fwd -= 2 * push;
+    const score = pv.value - dangerPenalty(d) - disengageCost(step) - coh + fwd;
     const reason: Reason = d < dangerHere && pv.value <= here.value ? "retreat" : pv.reason === "hold" ? "advance" : pv.reason;
     const dest = pv.goal ? s.grid.posOf(pv.goal.spot) : step;
     cands.push({
@@ -284,7 +295,7 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
       reason,
       score,
       label: `${reason} to ${step.x},${step.y}`,
-      parts: { future: pv.value, danger: -dangerPenalty(d), cohesion: -coh },
+      parts: { future: pv.value, danger: -dangerPenalty(d), cohesion: -coh, ...(fwd ? { forward: fwd } : {}) },
       dest,
       ...(pv.goal?.target ? { target: pv.goal.target } : {}),
     });
@@ -325,6 +336,23 @@ export function decide(s: BattleState, me: Unit, opts: { abilitiesOnly?: boolean
   let choice = cands[0]!;
   for (const c of cands) if (c.score > choice.score) choice = c;
   return { choice, candidates: cands };
+}
+
+/** Back-line classes: archers, mages and healers. */
+function isFragile(u: Unit): boolean {
+  return u.cls.tags.some((t) => t === "ranged" || t === "caster" || t === "healer");
+}
+
+/**
+ * Nerve (rules.nerve): caution as a percent of the unit's usual, by its health.
+ * Healthy units press on; from half HP down they are as careful as ever.
+ * Archers, mages and healers keep more of their caution (they're meant to hang back).
+ */
+function nerveScale(u: Unit, nerve: number): number {
+  const floor = isFragile(u) ? idiv(nerve + 100, 2) : nerve;
+  const hpPct = idiv(u.hp * 100, Math.max(1, maxHp(u)));
+  if (hpPct <= 50) return 100;
+  return floor + idiv((100 - floor) * (100 - hpPct), 50);
 }
 
 /** Tiles one move away: the 4 neighbours, plus 2-tile leaps over pits for jumpers. */
