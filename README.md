@@ -5,6 +5,9 @@ logic, autochess-style hands-off battles. The player's whole job is setup; units
 
 Design notes: [Tactics Autobattler: Design Notes](https://claude.ai/artifact/G9fSJf5VyuY8fcwm2ibHku)
 
+Play it: https://gatescrease-hash.github.io/tacticsgame/ (built and deployed from `main` by
+`.github/workflows/pages.yml`).
+
 ## Quick start
 
 Requires Node 20+.
