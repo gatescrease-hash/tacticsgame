@@ -57,7 +57,8 @@ const METRE = 0.5;
 
 const TILE_LOOK: Record<string, TileLook> = {
   ".": { height: 0.3, color: 0x9bb07a },
-  "#": { height: 0.8, color: 0x8a8378 },
+  // Walls stand 3 m above their ground (the sim's Tile.wall), plus a little jitter.
+  "#": { height: 3 * 0.5 + 0.3, color: 0x8a8378 },
   "~": { height: 0.16, color: 0x5d6f52 },
   '"': { height: 0.32, color: 0x7f9a5c },
 };

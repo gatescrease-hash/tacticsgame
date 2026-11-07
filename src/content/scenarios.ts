@@ -256,6 +256,82 @@ export const scenarios: Record<string, ScenarioDef> = {
     scouting:
       "Arago crossbows dug in on a 2 m bluff; only the steps on its north side lead up. Wolves roam below and can leap the chasm; harpies circle overhead. Bring something that jumps or flies, or something that shoots back from high ground.",
   },
+  siege: {
+    id: "siege",
+    name: "Castle siege",
+    description: "Storm a garrisoned castle: a narrow drawbridge over a chasm, crossbows on the battlements, a courtyard, a great hall.",
+    map: [
+      ".....OO#.....#......#.",
+      ".\"\"..OO#........#.....",
+      "...\".OO#.....#........",
+      ".....OO#.....#####.###",
+      ".....OO##....#........",
+      ".....OO#.....#.#.#....",
+      ".............#........",
+      "......................",
+      ".....OO#.....#........",
+      ".....OO##....#.#.#....",
+      ".....OO#.....#........",
+      ".....OO#.....###.#####",
+      ".\".\".OO#..............",
+      ".....OO#.....#....\"\"..",
+    ],
+    // Metres. Field 0 m with a 1 m rise facing the bridge; courtyard 1 m; battlements 3 m
+    // behind the outer wall, each reached by one 2 m stair (jumpers can leap up from the
+    // courtyard); great hall 2 m with pillars and a 3 m dais; kennels (north) and chapel
+    // (south) at 1 m, each with a door to the hall.
+    heights: [
+      "0000000033111111111111",
+      "0000000033111111111111",
+      "0000000033111111111111",
+      "0000000033111111112111",
+      "0000000012111122222222",
+      "0000000011111122222222",
+      "0110000111111122222233",
+      "0110000111111222222233",
+      "0110000011111122222233",
+      "0000000012111122222222",
+      "0000000033111122222222",
+      "0000000033111111211111",
+      "0000000033111111111111",
+      "0000000033111111111111",
+    ],
+    deployZone: { x0: 0, y0: 0, x1: 4, y1: 13 },
+    units: [
+      { unitId: "aldric", side: "player", pos: { x: 4, y: 6 } },
+      { unitId: "gorm", side: "player", pos: { x: 4, y: 7 } },
+      { unitId: "vex", side: "player", pos: { x: 3, y: 5 } },
+      { unitId: "kesh", side: "player", pos: { x: 3, y: 9 } },
+      { unitId: "wren", side: "player", pos: { x: 2, y: 6 } },
+      { unitId: "sela", side: "player", pos: { x: 2, y: 7 } },
+      { unitId: "mira", side: "player", pos: { x: 2, y: 8 } },
+      { unitId: "oswin", side: "player", pos: { x: 1, y: 7 } },
+      { unitId: "aeris", side: "player", pos: { x: 3, y: 8 } },
+      // Battlements (3 m): crossbows covering the bridge. `post`: they stay up there unless reached.
+      { unitId: "siege_xbow_a", side: "enemy", pos: { x: 8, y: 1 }, post: 1 },
+      { unitId: "siege_xbow_b", side: "enemy", pos: { x: 9, y: 2 }, post: 1 },
+      { unitId: "siege_xbow_c", side: "enemy", pos: { x: 8, y: 12 }, post: 1 },
+      // The gate and courtyard.
+      { unitId: "siege_spear_a", side: "enemy", pos: { x: 8, y: 6 } },
+      { unitId: "siege_spear_b", side: "enemy", pos: { x: 8, y: 7 } },
+      { unitId: "siege_sergeant", side: "enemy", pos: { x: 10, y: 7 } },
+      { unitId: "siege_knight", side: "enemy", pos: { x: 11, y: 6 } },
+      { unitId: "siege_mage", side: "enemy", pos: { x: 11, y: 9 }, post: 3 },
+      // The great hall and the dais.
+      { unitId: "siege_cleric", side: "enemy", pos: { x: 15, y: 7 }, post: 5 },
+      { unitId: "golem", side: "enemy", pos: { x: 19, y: 7 }, post: 3 },
+      { unitId: "siege_castellan", side: "enemy", pos: { x: 20, y: 7 }, post: 4 },
+      // Kennels and chapel roof.
+      { unitId: "wolf_a", side: "enemy", pos: { x: 18, y: 1 } },
+      { unitId: "wolf_b", side: "enemy", pos: { x: 19, y: 1 } },
+      { unitId: "harpy_a", side: "enemy", pos: { x: 19, y: 12 } },
+    ],
+    // Tuned (npm run tune -- siege) so the preset company settles as a win from most spots.
+    enemyMods: difficulty(0, 0, 0, 0, -38),
+    doctrine: { kind: "hold", radius: 2 },
+    scouting:
+      "The Castellan's garrison holds the keep. One drawbridge crosses the chasm, under crossbows on 3 m battlements that only a single stair (or a good jump) reaches. Past the courtyard, the great hall rises to a dais where the Castellan waits with a basalt golem; hounds in the kennels, a harpy over the chapel. Flyers can skip the bridge.",
+  },
   wolves: {
     id: "wolves",
     name: "Wolf country",

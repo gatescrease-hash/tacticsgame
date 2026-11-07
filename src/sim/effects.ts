@@ -1,5 +1,6 @@
 import { applyEffect, basicAttack, executeAbility, inRangeFrom } from "./combat.js";
 import { manhattan } from "./grid.js";
+import { idiv } from "./math.js";
 import { emit, type BattleState } from "./state.js";
 import { applyStatus, isFrozen } from "./statuses.js";
 import { maxHp, stat } from "./stats.js";
@@ -32,7 +33,14 @@ export function afterDamage(s: BattleState, u: Unit, sourceUid: number): void {
   }
 }
 
+/** Ticks after battle pressure peaks for healing to fall from full to its floor (exhaustion). */
+const EXHAUSTION_SPAN = 600;
+
 export function heal(s: BattleState, src: Unit, target: Unit, amount: number): void {
+  // Exhaustion: once battle pressure has fully set in, healing fades (to a quarter), so
+  // healer duels and heal-tanking can't stall a battle forever.
+  const late = s.t - (s.rules.pressureStart + s.rules.pressureSpan);
+  if (late > 0) amount = Math.max(1, idiv(amount * Math.max(25, 100 - idiv(late * 75, EXHAUSTION_SPAN)), 100));
   const max = maxHp(target);
   const actual = Math.min(amount, max - target.hp);
   if (actual <= 0) return;

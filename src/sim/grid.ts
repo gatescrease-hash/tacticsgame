@@ -9,14 +9,20 @@ export interface Tile {
   swamp: boolean;
   /** Bottomless pit: no footing (blocked) but no cover either. Flyers cross; jumpers leap over. */
   pit: boolean;
+  /**
+   * Walls stand this many metres above their ground. They block sight like terrain of that
+   * height: a line between two ground-level units is blocked, but archers on battlements
+   * (or a 2 m bluff) see over a wall at their feet. 0 = not a wall.
+   */
+  wall: number;
 }
 
 export const TILE_KINDS: Record<string, Tile> = {
-  ".": { blocked: false, blocksSight: false, moveMult: 100, swamp: false, pit: false },
-  "#": { blocked: true, blocksSight: true, moveMult: 100, swamp: false, pit: false },
-  "~": { blocked: false, blocksSight: false, moveMult: 200, swamp: true, pit: false },
-  '"': { blocked: false, blocksSight: true, moveMult: 150, swamp: false, pit: false },
-  O: { blocked: true, blocksSight: false, moveMult: 100, swamp: false, pit: true },
+  ".": { blocked: false, blocksSight: false, moveMult: 100, swamp: false, pit: false, wall: 0 },
+  "#": { blocked: true, blocksSight: false, moveMult: 100, swamp: false, pit: false, wall: 3 },
+  "~": { blocked: false, blocksSight: false, moveMult: 200, swamp: true, pit: false, wall: 0 },
+  '"': { blocked: false, blocksSight: true, moveMult: 150, swamp: false, pit: false, wall: 0 },
+  O: { blocked: true, blocksSight: false, moveMult: 100, swamp: false, pit: true, wall: 0 },
 };
 
 /** Terrain this many metres above both ends of a sight line blocks it. */
@@ -237,7 +243,8 @@ export function hasLineOfSight(grid: Grid, a: Pos, b: Pos): boolean {
     if (x0 === b.x && y0 === b.y) return true;
     if (!(x0 === a.x && y0 === a.y)) {
       const p = { x: x0, y: y0 };
-      if (grid.tile(p).blocksSight || grid.heightAt(p) >= eye) return false;
+      const t = grid.tile(p);
+      if (t.blocksSight || grid.heightAt(p) + t.wall >= eye) return false;
     }
     const e2 = 2 * err;
     if (e2 >= dy) {

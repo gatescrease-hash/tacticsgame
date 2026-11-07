@@ -31,6 +31,17 @@ export const units: Record<string, UnitDef> = Object.fromEntries(
     u("arago_xbow_b", "Bolt Pell", "human", "crossbowman", "crossbow", s(20, 6, 7, 6, 3, 1, 1, 3, 3, 2, 3), ["cowardly"]),
     u("arago_knight", "Dame Orla", "human", "knight", "longsword", s(26, 9, 6, 7, 2, 2, 1, 3, 3, 7, 3), ["steady"]),
     u("arago_sergeant", "Sergeant Brask", "human", "sergeant", "longsword", s(30, 9, 6, 7, 3, 2, 1, 4, 3, 8, 3), ["brave"]),
+    // ---------------- the castle garrison (siege)
+    u("siege_xbow_a", "Bowman Tor", "human", "crossbowman", "crossbow", s(20, 6, 8, 6, 3, 1, 1, 3, 3, 4, 4), ["steady"]),
+    u("siege_xbow_b", "Bowman Ide", "human", "crossbowman", "crossbow", s(20, 6, 7, 6, 3, 1, 1, 3, 3, 3, 3), ["smart"]),
+    u("siege_xbow_c", "Bowman Rusk", "human", "crossbowman", "crossbow", s(20, 6, 7, 6, 3, 1, 1, 3, 3, 2, 3), ["cowardly"]),
+    u("siege_spear_a", "Gate-warden Ulf", "human", "spearman", "spear", s(27, 8, 5, 7, 3, 2, 1, 3, 3, 6, 3), ["brave"]),
+    u("siege_spear_b", "Gate-warden Bera", "human", "spearman", "spear", s(27, 8, 5, 7, 3, 2, 1, 3, 3, 5, 3), ["steady"]),
+    u("siege_sergeant", "Sergeant Kell", "human", "sergeant", "longsword", s(30, 9, 6, 7, 3, 2, 1, 4, 3, 7, 3), ["cruel"]),
+    u("siege_knight", "Ser Hadrian", "human", "knight", "longsword", s(26, 9, 6, 7, 2, 2, 1, 3, 3, 7, 3), ["steady"]),
+    u("siege_mage", "Magus Orrin", "human", "stormcaller", "staff", s(18, 2, 4, 8, 3, 0, 8, 5, 3, 4, 4), ["smart"]),
+    u("siege_cleric", "Chaplain Edda", "human", "cleric", "mace", s(22, 5, 4, 7, 2, 2, 3, 4, 7, 7, 4), ["loyal"]),
+    u("siege_castellan", "Castellan Vey", "human", "sergeant", "longsword", s(34, 10, 7, 7, 3, 3, 1, 5, 4, 9, 4), ["brave"]),
     // ---------------- the foundry (constructs)
     u("golem", "Basalt Golem", "golem", "golem", "stone_fists", s(40, 12, 4, 5, 1, 3, 3, 0, 2, 10, 0), ["mindless"]),
     u("automaton_a", "Automaton I", "steamwork", "automaton", "piston", s(30, 10, 6, 7, 2, 2, 3, 0, 0, 10, 0), ["mindless"]),

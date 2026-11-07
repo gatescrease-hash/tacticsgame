@@ -97,6 +97,7 @@ export function createUnit(content: Content, unitId: string, side: Side, uid: nu
     committed: null,
     plan: null,
     lastStep: null,
+    post: null,
     posture: null,
     evasion: 0,
     lastTurn: null,
@@ -142,7 +143,7 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
     x: Math.round(presets.reduce((a, su) => a + su.pos.x, 0) / Math.max(1, presets.length)),
     y: Math.round(presets.reduce((a, su) => a + su.pos.y, 0) / Math.max(1, presets.length)),
   };
-  const entries: { unitId: string; side: Side; pos: Pos; extras?: UnitExtras; index: number }[] = opts.roster
+  const entries: { unitId: string; side: Side; pos: Pos; extras?: UnitExtras; index: number; post?: number }[] = opts.roster
     ? [
         ...opts.roster.map((r) => ({ unitId: r.unitId, side: "player" as const, pos: anchor, extras: r, index: -1 })),
         ...scenario.units.flatMap((su, i) => (su.side === "enemy" ? [{ ...su, index: i }] : [])),
@@ -153,6 +154,7 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
     const i = su.index;
     if (i >= 0 && benched.has(i)) return;
     const u = createUnit(content, su.unitId, su.side, units.length, su.extras);
+    if (su.post !== undefined) u.post = su.post;
     if (su.side === "enemy" && scenario.enemyMods) u.staticMods.push(...scenario.enemyMods);
     if (su.side === "enemy" && opts.enemyPower) {
       u.staticMods.push({ key: "hp", op: "pct", value: opts.enemyPower }, { key: "damageDealt", op: "pct", value: opts.enemyPower });
@@ -208,6 +210,7 @@ export function setupBattle(content: Content, scenarioId: string, seed: number, 
     if (opts.tempoOffset && u.side === "player") u.gauge = Math.min(99, u.gauge + opts.tempoOffset);
     if (u.side === "enemy" && scenario.doctrine.kind === "hold") u.intent = "hold";
     if (u.side === "player" && playerHolds) u.intent = "hold";
+    if (u.post !== null) u.intent = "hold";
   }
   // Per-unit streams are seeded from (seed, uid) so a unit's luck doesn't depend on anyone else.
   const streams = units.map((u) => new Rng(Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(u.uid + 1, 0x85ebca77)));
@@ -282,6 +285,17 @@ export function runBattle(content: Content, scenarioId: string, seed: number, op
 /** Commander layer: doctrines set squad intent. Ambushers hold until provoked. */
 function updateIntent(s: BattleState, u: Unit): void {
   if (u.intent !== "hold") return;
+  if (u.post !== null) {
+    // A posted unit answers only to threats to itself.
+    const post = u.post;
+    // ...or once battle pressure has fully set in: a last stand, not a stalemate.
+    const late = s.t > s.rules.pressureStart + s.rules.pressureSpan;
+    if (late || u.hp < maxHp(u) || s.units.some((e) => e.alive && e.side !== u.side && manhattan(e.pos, u.pos) <= post)) {
+      u.intent = "engage";
+      say(s, u, "advance", true);
+    }
+    return;
+  }
   const d = s.scenario.doctrine;
   const radius = u.side === "player" ? s.rules.playerHold : d.kind === "hold" ? d.radius : 0;
   const squad = s.units.filter((v) => v.side === u.side);
@@ -291,7 +305,7 @@ function updateIntent(s: BattleState, u: Unit): void {
     squad.some((v) => !v.alive || v.hp < maxHp(v)) ||
     squad.some((v) => v.alive && s.units.some((e) => e.alive && e.side !== u.side && manhattan(e.pos, v.pos) <= radius));
   if (provoked) {
-    for (const v of squad) v.intent = "engage";
+    for (const v of squad) if (v.post === null) v.intent = "engage";
     say(s, u, "advance", true);
   }
 }

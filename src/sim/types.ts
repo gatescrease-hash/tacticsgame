@@ -321,6 +321,11 @@ export interface ScenarioUnit {
   unitId: string;
   side: Side;
   pos: Pos;
+  /**
+   * Holds its post (a wall, a dais) until an enemy comes within this many tiles of it or
+   * it is hurt, whatever the rest of its squad does. It still attacks from where it stands.
+   */
+  post?: number;
 }
 
 export interface ScenarioDef {
@@ -407,6 +412,8 @@ export interface Unit {
   alive: boolean;
   /** Set by the commander layer each turn. */
   intent: "engage" | "hold";
+  /** Scenario post radius (ScenarioUnit.post): this unit holds until an enemy comes this close. */
+  post: number | null;
   lastReason: Reason | null;
   /** AI commitment: uid of the enemy this unit is working on (rules.commitTarget). */
   committed: number | null;

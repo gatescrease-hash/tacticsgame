@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { content } from "../src/content/index.js";
-import { basicAttack, hasLineOfSight, runBattle, setupBattle, type Content, type ScenarioDef } from "../src/sim/index.js";
+import { basicAttack, Grid, hasLineOfSight, runBattle, setupBattle, type Content, type ScenarioDef } from "../src/sim/index.js";
 import { executeAbility, inRangeFrom } from "../src/sim/combat.js";
 import { edgeCost } from "../src/sim/movement.js";
 
@@ -146,5 +146,16 @@ describe("elevation", () => {
     const b = runBattle(content, "cliffs", 3);
     expect(a.log).toEqual(b.log);
     expect(a.log.at(-1)?.kind).toBe("end");
+  });
+});
+
+describe("walls and sight", () => {
+  it("walls block sight at ground level, but not from battlements above them", () => {
+    // A wall (3 m above its ground) between two ground tiles; a 3 m battlement behind it.
+    const g = new Grid([".#.", "...", "..."], ["303", "000", "000"]);
+    // Ground to ground across the wall: blocked.
+    expect(hasLineOfSight(new Grid(["...", ".#.", "..."]), { x: 1, y: 0 }, { x: 1, y: 2 })).toBe(false);
+    // From the 3 m battlement (2,0) over the wall (1,0) to the field (0,0)... the wall's own top is 3 m.
+    expect(hasLineOfSight(g, { x: 2, y: 0 }, { x: 0, y: 0 })).toBe(true);
   });
 });

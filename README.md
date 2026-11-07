@@ -45,7 +45,32 @@ or rest (+1 heart). Losses cost 1-3 hearts by how badly they went; at 0 the run 
 Scenarios (all have elevation now): `cliffs` (crossbows on a 2 m bluff, a chasm of pits, leaping wolves,
 harpies), `duel`, `skirmish`, `patrol` (Arago militia, textbook formation), `foundry` (golem and
 automatons: fire and minds don't work), `marsh` (lizardfolk ambush plus mudlings that water
-dissolves), `wolves` (a pack that goes for stragglers).
+dissolves), `wolves` (a pack that goes for stragglers), and `siege` (below).
+
+**Castle siege** (`siege`, 22x14, 9 vs 14; single battles only, not in the run rotation). The
+company (Aldric, Gorm, Vex, Kesh, Wren, Sela, Mira, Oswin, Aeris) storms a garrisoned keep:
+- a field with a 1 m rise, then a 2-tile chasm spanned only by a 2-wide drawbridge into the gate;
+- crossbows on 3 m battlements behind the outer wall, each reached by a single 2 m stair from the
+  1 m courtyard (skirmishers, duelists and wolves can jump up; flyers skip the bridge);
+- gate-wardens, a sergeant, a knight and a battle-mage in the courtyard; an inner wall with three
+  doors; a 2 m great hall with pillars, a chaplain, and a 3 m dais where the Castellan waits with
+  a basalt golem; hounds in the kennels (north wing), a harpy over the chapel (south wing).
+
+The garrison uses the hold doctrine (radius 2), and scenario units can now hold a **post**
+(`ScenarioUnit.post`): they stay put (crossbows on the walls, the Castellan on the dais) until an
+enemy comes within that many tiles or they're hurt, whatever the rest of the squad does, still
+attacking from where they stand. Tuned to -38% power so the preset company settles as a win from
+most spots (median 79% settled). It runs at ~7 battles/s (23 units on 308 tiles), so a settled
+Fight bakes in ~3.5 s in the browser.
+
+Three rule changes came with it:
+- **Walls have height.** `#` stands 3 m above its ground and blocks sight like terrain that tall,
+  instead of always: ground-level units still can't see through walls, but archers on 3 m
+  battlements (or a 2 m bluff) see over a wall at their feet. The 3D view draws walls that tall.
+- **Exhaustion.** Once battle pressure has fully set in (tick 600 by default), healing fades
+  over the next 600 ticks to a quarter. Cleric-vs-chaplain smite/heal duels stalled sieges at
+  the 5000-tick timeout.
+- **Posts end** at the same point: the garrison makes a last stand instead of waiting forever.
 
 ## Tuning panel
 
