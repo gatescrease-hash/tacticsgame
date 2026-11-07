@@ -385,6 +385,12 @@ Knockouts kick up dust with a slight shake. **Status auras**: stun stars orbit t
 embers, poison bubbles and frenzy sparks rise; bleeding and wet drip; rallied, hasted and slowed
 show a ring at the feet.
 
+**Initiative dials**: a ring around each unit's base fills clockwise as its gauge climbs toward
+its turn (fast units' dials visibly race round, slow ones crawl) and turns gold and pulses when it
+is ready to act. Turn events carry every unit's gauge and fill rate when a battle is baked for
+playback (`recordQueue`, so batch simulation is unaffected); viewers interpolate between them. The
+2D view draws the same dial around each token.
+
 **Sound** (`src/web/sound.ts`): quiet synthesized voices (Web Audio, no files), driven by log
 events like the renderers: swings and whooshes by attack style, a bow twang, spell sounds by
 element (fire crackle, lightning zap, water, wind, a shimmer for the rest), hit thumps (crits

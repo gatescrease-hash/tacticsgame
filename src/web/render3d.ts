@@ -33,6 +33,8 @@ export interface ViewState {
   current: number | null;
   floaters: { uid: number; text: string; color: string; start: number; until: number }[];
   bubbles: { uid: number; text: string; until: number }[];
+  /** Initiative dial per unit, 0-1 (1 = about to act). */
+  gauges?: Map<number, number>;
 }
 
 export interface Theme {
@@ -67,6 +69,11 @@ function hash(x: number, y: number, salt = 0): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
+/** Small random extra height per tile so the board doesn't look machined. */
+function tileJitter(ch: string, x: number, y: number): number {
+  return ch === "#" ? hash(x, y) * 0.2 : hash(x, y) * 0.05;
+}
+
 function shade(color: number, amount: number): THREE.Color {
   const c = new THREE.Color(color);
   const hsl = { h: 0, s: 0, l: 0 };
@@ -91,6 +98,9 @@ const SKIN: Record<string, number> = {
 };
 
 const FLYERS = new Set(["winged", "harpy"]);
+
+/** Segments in an initiative dial (the arc is revealed in these steps). */
+const DIAL_SEGMENTS = 48;
 
 /** A pair of flat, low-poly wings, tagged so the renderer can flap them. */
 function addWings(g: THREE.Group, color: number, span: number, y: number, z: number): void {
@@ -272,6 +282,9 @@ interface UnitView {
   ring: THREE.Mesh;
   /** Soft disc on the ground under flyers. */
   shadow: THREE.Mesh;
+  /** Initiative dial around the base: a faint track and an arc that fills toward the unit's turn. */
+  dialTrack: THREE.Mesh;
+  dial: THREE.Mesh;
   hpBack: THREE.Mesh;
   hpFill: THREE.Mesh;
   phase: number;
@@ -396,7 +409,8 @@ export class Battle3D {
   private tileTop(x: number, y: number): number {
     const ch = this.map[y]?.[x] ?? ".";
     // Over a pit, flyers hover at the level of the surrounding ground.
-    const base = ch === "~" ? 0.2 : ch === "O" ? 0.3 : (TILE_LOOK[ch] ?? TILE_LOOK["."]!).height;
+    // Include the per-tile height jitter, or units (and their base rings) sink into the surface.
+    const base = ch === "~" ? 0.2 : ch === "O" ? 0.3 : (TILE_LOOK[ch] ?? TILE_LOOK["."]!).height + tileJitter(ch, x, y);
     return base + (this.metres[y]?.[x] ?? 0) * METRE;
   }
 
@@ -430,7 +444,7 @@ export class Battle3D {
           rock.castShadow = true;
           this.scene.add(rock);
         }
-        const h = look.height + (ch === "#" ? hash(x, y) * 0.2 : hash(x, y) * 0.05);
+        const h = look.height + tileJitter(ch, x, y);
         const tile = new THREE.Mesh(new THREE.BoxGeometry(0.97, h, 0.97), mat(shade(look.color, (hash(x, y, 1) - 0.5) * 0.08 + lift * 0.06)));
         tile.position.set(p.x, lift + h / 2, p.z);
         tile.receiveShadow = true;
@@ -502,6 +516,19 @@ export class Battle3D {
     );
     ring.position.y = 0.01;
     root.add(ring);
+    // Initiative dial: drawRange reveals the arc segment by segment (clockwise from the map's north, seen from above).
+    const dialTrack = new THREE.Mesh(
+      new THREE.RingGeometry(0.41, 0.51, DIAL_SEGMENTS, 1, Math.PI / 2).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0x1c1a17, transparent: true, opacity: 0.35, depthWrite: false }),
+    );
+    const dial = new THREE.Mesh(
+      new THREE.RingGeometry(0.41, 0.51, DIAL_SEGMENTS, 1, Math.PI / 2).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false }),
+    );
+    dial.scale.x = -1;
+    dialTrack.position.y = dial.position.y = 0.02;
+    dial.renderOrder = 2;
+    root.add(dialTrack, dial);
     const shadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.26, 12).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25, depthWrite: false }),
@@ -523,7 +550,7 @@ export class Battle3D {
       }
     });
     this.units.set(u.uid, {
-      root, model, facing: yaw, ring, shadow, hpBack, hpFill, phase: hash(u.uid, 3) * Math.PI * 2, yaw,
+      root, model, facing: yaw, ring, shadow, dialTrack, dial, hpBack, hpFill, phase: hash(u.uid, 3) * Math.PI * 2, yaw,
       action: null, react: null, flash: null, ko: null, materials, auras: new Map(),
     });
   }
@@ -943,7 +970,7 @@ export class Battle3D {
       for (let i = 0; i < def.n; i++) {
         const geo =
           def.kind === "ring"
-            ? new THREE.RingGeometry(0.4, 0.44, 20).rotateX(-Math.PI / 2)
+            ? new THREE.RingGeometry(0.52, 0.56, 20).rotateX(-Math.PI / 2)
             : def.kind === "orbit"
               ? new THREE.OctahedronGeometry(0.045, 0)
               : new THREE.TetrahedronGeometry(0.035, 0);
@@ -1027,6 +1054,18 @@ export class Battle3D {
       u.shadow.visible = flyer && !u.ko;
       u.shadow.position.y = base.y - y + 0.02;
       u.ring.position.y = base.y - y + 0.01;
+      u.dial.position.y = u.dialTrack.position.y = base.y - y + 0.02;
+      // Initiative dial: the arc fills as the unit's turn approaches; full and pulsing on its turn.
+      const g = view.gauges?.get(uid);
+      const showDial = g !== undefined && !u.ko && v.alive;
+      u.dial.visible = u.dialTrack.visible = showDial;
+      if (showDial) {
+        const full = view.current === uid || g >= 1;
+        u.dial.geometry.setDrawRange(0, 6 * Math.max(0, Math.min(DIAL_SEGMENTS, Math.round(g * DIAL_SEGMENTS))));
+        const dm = u.dial.material as THREE.MeshBasicMaterial;
+        dm.color.setHex(full ? 0xffc93a : 0xffffff);
+        dm.opacity = full ? 0.8 + Math.sin(t * 10) * 0.2 : 0.75 + 0.25 * g;
+      }
       // Idle bob and sway (calmer when it's not your turn).
       const active = view.current === uid;
       const bob = Math.sin(t * (active ? 7 : 3.2) + u.phase);

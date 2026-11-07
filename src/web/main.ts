@@ -151,10 +151,31 @@ function drawMap(map: string[], c: ReturnType<typeof colors>, heights?: string[]
   }
 }
 
-function drawUnitToken(x: number, y: number, label: string, side: "player" | "enemy", c: ReturnType<typeof colors>, opts: { alpha?: number; ring?: boolean; hp?: number; maxHp?: number; statuses?: string[] } = {}) {
+function drawUnitToken(
+  x: number,
+  y: number,
+  label: string,
+  side: "player" | "enemy",
+  c: ReturnType<typeof colors>,
+  opts: { alpha?: number; ring?: boolean; hp?: number; maxHp?: number; statuses?: string[]; gauge?: number | undefined } = {},
+) {
   const cx = x * TILE + TILE / 2;
   const cy = y * TILE + TILE / 2;
   ctx.globalAlpha = opts.alpha ?? 1;
+  if (opts.gauge !== undefined && !opts.ring) {
+    // Initiative dial: fills clockwise from 12 o'clock; full = about to act.
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, TILE * 0.4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = c.text;
+    ctx.globalAlpha = (opts.alpha ?? 1) * (0.35 + 0.5 * opts.gauge);
+    ctx.beginPath();
+    ctx.arc(cx, cy, TILE * 0.4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * opts.gauge);
+    ctx.stroke();
+    ctx.globalAlpha = opts.alpha ?? 1;
+  }
   if (opts.ring) {
     ctx.strokeStyle = c.accent;
     ctx.lineWidth = 3;
@@ -450,6 +471,12 @@ let play: {
   map: string[];
   heights?: string[];
   raf: number;
+  /** Initiative dials: the latest gauge snapshot (from a turn event) and each unit's fill (0-1) now. */
+  snap: { t: number; gauge: number[]; rate: number[] } | null;
+  gauges: Map<number, number>;
+  /** Tick of the last applied event and when it was applied, to glide the dials between events. */
+  tick: number;
+  tickAt: number;
 } | null = null;
 
 function speed(): number {
@@ -577,7 +604,7 @@ function startPlayback(bake: BakeResponse) {
   const units = new Map<number, PUnit>(
     start.units.map((u) => [u.uid, { ...u, x: u.pos.x, y: u.pos.y, from: u.pos, to: u.pos, moveStart: 0, moveEnd: 0, alive: true, statuses: new Map() }]),
   );
-  play = { log, idx: 0, nextAt: performance.now(), paused: false, pausedAt: 0, units, current: null, floaters: [], bubbles: [], lines: [], map: start.map, ...(start.heights ? { heights: start.heights } : {}), raf: 0 };
+  play = { log, idx: 0, nextAt: performance.now(), paused: false, pausedAt: 0, units, current: null, floaters: [], bubbles: [], lines: [], map: start.map, ...(start.heights ? { heights: start.heights } : {}), raf: 0, snap: null, gauges: new Map(), tick: 0, tickAt: performance.now() };
   if (viewSel.value === "3d") {
     const c = colors();
     stage3d.hidden = false;
@@ -594,6 +621,27 @@ function startPlayback(bake: BakeResponse) {
   play.raf = requestAnimationFrame(frame);
 }
 
+/**
+ * Each unit's initiative dial (0-1): its gauge at the last turn snapshot plus its fill rate
+ * times the ticks since, with playback time gliding between the ticks of consecutive events.
+ */
+function updateGauges(now: number) {
+  const p = play!;
+  if (!p.snap) return;
+  const next = p.log[p.idx];
+  const span = p.nextAt - p.tickAt;
+  const k = next && span > 0 ? Math.min(1, Math.max(0, (now - p.tickAt) / span)) : 0;
+  const tick = p.tick + (next ? (next.t - p.tick) * k : 0);
+  for (const [uid, u] of p.units) {
+    if (!u.alive) {
+      p.gauges.delete(uid);
+      continue;
+    }
+    const g = (p.snap.gauge[uid] ?? 0) + (p.snap.rate[uid] ?? 0) * (tick - p.snap.t);
+    p.gauges.set(uid, Math.min(1, Math.max(0, g / 100)));
+  }
+}
+
 function frame(now: number) {
   if (!play) return;
   const p = play;
@@ -601,8 +649,11 @@ function frame(now: number) {
     const e = p.log[p.idx]!;
     applyEvent(e, now);
     p.nextAt = now + duration(e.kind) / speed();
+    p.tick = e.t;
+    p.tickAt = now;
     p.idx++;
   }
+  updateGauges(p.paused ? p.pausedAt : now);
   updatePositions(now);
   if (r3d) r3d.render(now, p);
   else draw(now);
@@ -620,6 +671,7 @@ function applyEvent(e: BattleEvent, now: number) {
   switch (e.kind) {
     case "turn": {
       p.current = e.uid;
+      if (e.gauge && e.rate) p.snap = { t: e.t, gauge: e.gauge, rate: e.rate };
       if (e.queue) renderTurnbar("Next:", [e.uid, ...e.queue.slice(0, 9)].map((id) => u(id)), 0);
       break;
     }
@@ -730,7 +782,7 @@ function draw(now: number) {
 
   for (const x of p.units.values()) {
     if (!x.alive) continue;
-    drawUnitToken(x.x, x.y, initials(x.name), x.side, c, { ring: p.current === x.uid, hp: x.hp, maxHp: x.maxHp, statuses: [...x.statuses.values()] });
+    drawUnitToken(x.x, x.y, initials(x.name), x.side, c, { ring: p.current === x.uid, hp: x.hp, maxHp: x.maxHp, statuses: [...x.statuses.values()], gauge: p.gauges.get(x.uid) });
   }
 
   p.floaters = p.floaters.filter((f) => f.until > now);

@@ -1,5 +1,5 @@
 import { debugCandidates, decide, hasContact, isFragile, PLAN_SKILL, roleOf, tacticsSkill } from "./ai.js";
-import { advance, nextActor, openingGauge, projectTurnOrder, THRESHOLD, ticksToNextEvent } from "./clock.js";
+import { advance, fillRate, nextActor, openingGauge, projectTurnOrder, THRESHOLD, ticksToNextEvent } from "./clock.js";
 import { basicAttack, executeAbility, inRangeFrom } from "./combat.js";
 import { firePassives, say } from "./effects.js";
 import { arrangeFormation } from "./formation.js";
@@ -297,7 +297,19 @@ function updateIntent(s: BattleState, u: Unit): void {
 }
 
 function takeTurn(s: BattleState, u: Unit): void {
-  emit(s, s.opts.recordQueue ? { t: s.t, kind: "turn", uid: u.uid, queue: projectTurnOrder(s.units, 8, s.rules.ties) } : { t: s.t, kind: "turn", uid: u.uid });
+  emit(
+    s,
+    s.opts.recordQueue
+      ? {
+          t: s.t,
+          kind: "turn",
+          uid: u.uid,
+          queue: projectTurnOrder(s.units, 8, s.rules.ties),
+          gauge: s.units.map((x) => (x.alive ? x.gauge : 0)),
+          rate: s.units.map((x) => (x.alive ? fillRate(x) : 0)),
+        }
+      : { t: s.t, kind: "turn", uid: u.uid },
+  );
   firePassives(s, u, "onTurnStart");
   if (!u.alive) return;
   updateIntent(s, u);

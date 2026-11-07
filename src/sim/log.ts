@@ -49,8 +49,12 @@ export type BattleEvent =
       heights?: string[];
       units: UnitSnapshot[];
     }
-  /** A unit begins its turn. `queue` = projected upcoming actors (for the turn-order bar). */
-  | { t: number; kind: "turn"; uid: number; queue?: number[] }
+  /**
+   * A unit begins its turn. Playback extras (recordQueue): `queue` = projected upcoming
+   * actors (turn-order bar); `gauge` / `rate` = every unit's initiative gauge and fill rate
+   * per tick, indexed by uid (0 for the fallen), so viewers can show each unit's dial filling.
+   */
+  | { t: number; kind: "turn"; uid: number; queue?: number[]; gauge?: number[]; rate?: number[] }
   | { t: number; kind: "move"; uid: number; from: Pos; to: Pos; cost: number }
   | { t: number; kind: "ability"; uid: number; ability: string; abilityName: string; target: number; at: Pos; cost: number; counter: boolean }
   | {
